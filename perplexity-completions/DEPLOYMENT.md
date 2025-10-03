@@ -1,6 +1,6 @@
 # Fly.io Private Deployment Guide
 
-This guide covers deploying the MCP Perplexity Search server as a **fully private service** on Fly.io with **no public ports**.
+This guide covers deploying the MCP Perplexity Chat Completions server as a **fully private service** on Fly.io with **no public ports**.
 
 ## 🚀 Quick Start
 
@@ -14,7 +14,7 @@ curl -L https://fly.io/install.sh | sh
 fly auth login
 
 # 3. Create app (don't deploy yet)
-cd perplexity-search
+cd perplexity-completions
 fly launch --no-deploy
 
 # 4. Set secrets
@@ -27,13 +27,13 @@ fly secrets set \
 fly deploy
 
 # 6. Test (via WireGuard or from another Fly app)
-curl http://perplexity-search-mcp-private.internal:8080/health
+curl http://perplexity-completions-mcp-private.internal:8080/health
 ```
 
 **Quick test from another Fly app:**
 ```typescript
 const auth = Buffer.from('changepilot:your-password').toString('base64');
-const response = await fetch('http://perplexity-search-mcp-private.internal:8080/mcp', {
+const response = await fetch('http://perplexity-completions-mcp-private.internal:8080/mcp', {
   method: 'POST',
   headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 1 })
@@ -52,8 +52,9 @@ fly secrets list      # View secrets
 
 ## Architecture Overview
 
-- **`index.ts`**: Stdio-based MCP server for local Claude Desktop use (not deployed)
+- **`index.ts`**: Stdio-based MCP server for local MCP client use (not deployed)
 - **`server.ts`**: HTTP-based MCP server for Fly.io deployment (private only)
+- **API**: Perplexity Chat Completions API with SSE streaming support
 - **Authentication**: Basic auth with username/password
 - **Network**: Fly.io private `.internal` network only
 
@@ -78,7 +79,7 @@ fly secrets list      # View secrets
 Create the Fly.io app **without deploying yet**:
 
 ```bash
-cd perplexity-search
+cd perplexity-completions
 fly launch --no-deploy
 ```
 
@@ -121,7 +122,9 @@ fly logs
 
 You should see:
 ```
-MCP Perplexity Search server listening on port 8080
+Perplexity Chat Completions MCP Server running on port 8080
+Protocol: MCP 2024-11-05 with SSE streaming support
+Security: Basic Auth + Fly.io private networking
 Health check: http://localhost:8080/health
 ```
 
@@ -133,7 +136,7 @@ Access from any other Fly app in your organization using the `.internal` DNS:
 
 ```typescript
 // Example: From ChangeSim or other Fly app
-const response = await fetch('http://perplexity-search-mcp-private.internal:8080/mcp/tools', {
+const response = await fetch('http://perplexity-completions-mcp-private.internal:8080/mcp/tools', {
   headers: {
     'Authorization': `Basic ${Buffer.from('changepilot:your-secure-password').toString('base64')}`
   }
@@ -151,8 +154,8 @@ const completion = await openai.chat.completions.create({
   messages: [{ role: "user", content: "Search for latest AI news" }],
   tools: [{
     type: "mcp",
-    server_url: "http://perplexity-search-mcp-private.internal:8080",
-    allowed_tools: ["perplexity-search"]
+    server_url: "http://perplexity-completions-mcp-private.internal:8080",
+    allowed_tools: ["perplexity-completions"]
   }]
 });
 ```
@@ -172,7 +175,7 @@ For local development and testing:
    ```bash
    # Once connected, you can access the internal network
    curl -u changepilot:your-secure-password \
-     http://perplexity-search-mcp-private.internal:8080/mcp/tools
+     http://perplexity-completions-mcp-private.internal:8080/mcp/tools
    ```
 
 ## API Endpoints
@@ -187,9 +190,9 @@ GET /
 Returns server information:
 ```json
 {
-  "name": "Perplexity Search MCP Server",
-  "version": "1.0.0",
-  "description": "Model Context Protocol server for Perplexity Search API",
+  "name": "Perplexity Chat Completions MCP Server",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Perplexity Chat Completions API",
   "endpoints": {
     "health": "/health",
     "mcp": "/mcp",
@@ -252,10 +255,13 @@ Content-Type: application/json
   "method": "tools/call",
   "id": 3,
   "params": {
-    "name": "perplexity-search",
+    "name": "perplexity-completions",
     "arguments": {
       "query": "latest AI developments",
-      "max_results": 10
+      "model": "sonar",
+      "stream": false,
+      "search_mode": "web",
+      "max_tokens": 1024
     }
   }
 }
@@ -274,8 +280,8 @@ Returns:
   "protocol": "mcp-http",
   "version": "0.1.0",
   "server": {
-    "name": "perplexity-search-mcp",
-    "version": "1.0.0"
+    "name": "perplexity-completions-mcp",
+    "version": "0.1.0"
   }
 }
 ```
@@ -293,9 +299,25 @@ Returns:
 {
   "tools": [
     {
-      "name": "perplexity-search",
-      "description": "Performs web search using the Perplexity Search API...",
-      "inputSchema": { ... }
+      "name": "perplexity-completions",
+      "description": "Performs AI-powered web search using the Perplexity Chat Completions API. Returns AI-generated answers with real-time web search, citations, and sources. Supports SSE streaming for real-time token-by-token responses.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "model": {
+            "type": "string",
+            "enum": ["sonar", "sonar-pro", "sonar-deep-research", "sonar-reasoning", "sonar-reasoning-pro"]
+          },
+          "stream": { "type": "boolean" },
+          "search_mode": { "type": "string", "enum": ["web", "academic", "sec"] },
+          "recency_filter": { "type": "string", "enum": ["day", "week", "month", "year"] },
+          "reasoning_effort": { "type": "string", "enum": ["low", "medium", "high"] },
+          "max_tokens": { "type": "number" },
+          "temperature": { "type": "number" }
+        },
+        "required": ["query"]
+      }
     }
   ]
 }
@@ -308,10 +330,12 @@ Authorization: Basic <base64-encoded-credentials>
 Content-Type: application/json
 
 {
-  "name": "perplexity-search",
+  "name": "perplexity-completions",
   "arguments": {
     "query": "latest AI developments",
-    "max_results": 10
+    "model": "sonar",
+    "search_mode": "web",
+    "max_tokens": 1024
   }
 }
 ```
@@ -322,7 +346,153 @@ Returns:
   "content": [
     {
       "type": "text",
-      "text": "Found 10 search results:\n\n1. **Title**\n   URL: https://..."
+      "text": "AI-generated answer about latest developments...\n\n## Sources\n\n1. **Article Title**\n   https://example.com/article\n   Brief snippet from the article\n\n2. **Another Source**\n   https://example.com/source2\n   Another snippet..."
+    }
+  ],
+  "isError": false
+}
+```
+
+## SSE Streaming Support
+
+The server supports **Server-Sent Events (SSE)** streaming for real-time token-by-token responses from Perplexity AI. This enables progressive display of results as they are generated.
+
+### How SSE Streaming Works
+
+When `stream: true` is set in tool arguments:
+
+1. **Server receives** streaming data from Perplexity API
+2. **Pipes SSE events** directly to client in real-time
+3. **Sends structured events** with content chunks and citations
+4. **Completes with [DONE]** signal when finished
+
+### SSE Event Format
+
+**Content Event (streamed tokens):**
+```
+data: {"type":"content","content":"AI has seen "}
+data: {"type":"content","content":"significant "}
+data: {"type":"content","content":"progress..."}
+```
+
+**Citations Event (at completion):**
+```
+data: {"type":"citations","content":"\n\n## Sources\n\n1. **Article Title**\n   https://example.com\n"}
+```
+
+**Completion Signal:**
+```
+data: [DONE]
+```
+
+**Error Event (if errors occur):**
+```
+data: {"type":"error","content":"Error message"}
+```
+
+### Testing SSE Streaming
+
+**Via curl (with --no-buffer flag):**
+```bash
+curl -X POST http://perplexity-completions-mcp-private.internal:8080/mcp/call \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Basic $(echo -n 'changepilot:your-password' | base64)" \
+  -d '{
+    "name": "perplexity-completions",
+    "arguments": {
+      "query": "List and explain 10 major breakthroughs in AI from 2024-2025",
+      "model": "sonar",
+      "stream": true,
+      "max_tokens": 2000,
+      "recency_filter": "year"
+    }
+  }' \
+  --no-buffer
+```
+
+**Via fetch API (JavaScript/TypeScript):**
+```typescript
+const auth = Buffer.from('changepilot:your-password').toString('base64');
+
+const response = await fetch('http://perplexity-completions-mcp-private.internal:8080/mcp/call', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Basic ${auth}`
+  },
+  body: JSON.stringify({
+    name: 'perplexity-completions',
+    arguments: {
+      query: 'What are the latest AI developments?',
+      model: 'sonar',
+      stream: true
+    }
+  })
+});
+
+// Process SSE stream
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split('\n');
+  buffer = lines.pop() || '';
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const data = line.slice(6);
+
+      if (data === '[DONE]') {
+        console.log('Stream complete');
+        break;
+      }
+
+      const event = JSON.parse(data);
+
+      if (event.type === 'content') {
+        process.stdout.write(event.content); // Display token
+      } else if (event.type === 'citations') {
+        console.log(event.content); // Display sources
+      } else if (event.type === 'error') {
+        console.error('Error:', event.content);
+      }
+    }
+  }
+}
+```
+
+### Performance Benefits
+
+**Real-time feedback:**
+- ✅ Time-to-first-token: ~200-500ms (vs 3-5s for full response)
+- ✅ Progressive display improves perceived performance
+- ✅ Users can start reading while generation continues
+
+**Efficient resource usage:**
+- ✅ No buffering of large responses in memory
+- ✅ Backpressure handling with stream flow control
+- ✅ Graceful connection management
+
+**Production considerations:**
+- ⚠️ Requires persistent HTTP connection (keep-alive)
+- ⚠️ Client must handle SSE parsing correctly
+- ⚠️ Network interruptions require reconnection logic
+
+### Non-streaming Mode
+
+If `stream: false` or `stream` is omitted, the server returns a complete JSON response:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "AI has seen significant progress...\n\n## Sources\n\n1. **Article**\n   https://example.com"
     }
   ],
   "isError": false
@@ -356,7 +526,7 @@ Create a simple test script in your other Fly app:
 ```typescript
 // test-mcp.ts
 const auth = Buffer.from('changepilot:your-secure-password').toString('base64');
-const baseUrl = 'http://perplexity-search-mcp-private.internal:8080';
+const baseUrl = 'http://perplexity-completions-mcp-private.internal:8080';
 
 // Test server info (no auth)
 const infoResponse = await fetch(`${baseUrl}/`);
@@ -413,10 +583,12 @@ const searchResponse = await fetch(`${baseUrl}/mcp`, {
     method: 'tools/call',
     id: 3,
     params: {
-      name: 'perplexity-search',
+      name: 'perplexity-completions',
       arguments: {
         query: 'test query',
-        max_results: 5
+        model: 'sonar',
+        search_mode: 'web',
+        max_tokens: 512
       }
     }
   })
@@ -434,7 +606,7 @@ console.log('Legacy Tools:', await legacyToolsResponse.json());
 
 ```bash
 # Connect to WireGuard first, then:
-BASE_URL="http://perplexity-search-mcp-private.internal:8080"
+BASE_URL="http://perplexity-completions-mcp-private.internal:8080"
 
 # Test server info (no auth)
 curl "$BASE_URL/"
@@ -478,10 +650,12 @@ curl -u changepilot:your-secure-password \
     "method": "tools/call",
     "id": 3,
     "params": {
-      "name": "perplexity-search",
+      "name": "perplexity-completions",
       "arguments": {
         "query": "artificial intelligence news",
-        "max_results": 5
+        "model": "sonar",
+        "search_mode": "web",
+        "max_tokens": 512
       }
     }
   }' \
@@ -494,10 +668,12 @@ curl -u changepilot:your-secure-password \
   -X POST \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "perplexity-search",
+    "name": "perplexity-completions",
     "arguments": {
       "query": "artificial intelligence news",
-      "max_results": 5
+      "model": "sonar",
+      "search_mode": "web",
+      "max_tokens": 512
     }
   }' \
   "$BASE_URL/mcp/call"
@@ -523,7 +699,7 @@ fly logs
 ### View Logs
 ```bash
 fly logs
-fly logs -a perplexity-search-mcp-private
+fly logs -a perplexity-completions-mcp-private
 ```
 
 ### Check Resource Usage
@@ -571,7 +747,7 @@ Common issues:
 ### Can't Connect from Other Fly App
 
 1. Verify both apps are in the same Fly organization
-2. Use the exact `.internal` hostname: `perplexity-search-mcp-private.internal`
+2. Use the exact `.internal` hostname: `perplexity-completions-mcp-private.internal`
 3. Check authentication credentials
 4. Verify the server is running: `fly status`
 
@@ -585,7 +761,7 @@ Common issues:
 
 1. Verify WireGuard peer is active: `fly wireguard list`
 2. Check WireGuard client is connected
-3. Test DNS resolution: `ping perplexity-search-mcp-private.internal`
+3. Test DNS resolution: `ping perplexity-completions-mcp-private.internal`
 
 ## Cost Estimation
 

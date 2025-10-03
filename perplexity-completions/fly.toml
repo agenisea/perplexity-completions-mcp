@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for perplexity-search-mcp-private on 2025-09-30T19:14:51-07:00
+# fly.toml app configuration file generated for perplexity-completions-mcp-private on 2025-10-02
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'perplexity-search-mcp-private'
+app = 'perplexity-completions-mcp-private'
 primary_region = 'sjc'
 
 [build]
@@ -25,6 +25,13 @@ primary_region = 'sjc'
     grace_period = '10s'
     method = 'GET'
     path = '/health'
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 8080
 
 [[vm]]
   memory = '512mb'

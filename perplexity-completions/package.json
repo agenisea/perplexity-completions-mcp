@@ -1,27 +1,30 @@
 {
-  "name": "server-perplexity-search",
+  "name": "server-perplexity-completions",
   "version": "0.1.0",
-  "description": "MCP server for Perplexity Search API integration",
+  "description": "MCP server for Perplexity Chat Completions API with SSE streaming support",
   "keywords": [
     "ai",
     "perplexity",
     "mcp",
-    "modelcontextprotocol"
+    "modelcontextprotocol",
+    "streaming",
+    "sse",
+    "chat-completions"
   ],
-  "homepage": "https://github.com/agenisea/perplexity-search-mcp",
+  "homepage": "https://github.com/agenisea/perplexity-completions-mcp",
   "bugs": {
-    "url": "https://github.com/agenisea/perplexity-search-mcp/issues"
+    "url": "https://github.com/agenisea/perplexity-completions-mcp/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/agenisea/perplexity-search-mcp.git"
+    "url": "git+https://github.com/agenisea/perplexity-completions-mcp.git"
   },
   "license": "MIT",
   "author": "agenisea",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "mcp-server-perplexity-search": "dist/index.js"
+    "mcp-server-perplexity-completions": "dist/index.js"
   },
   "files": [
     "dist"

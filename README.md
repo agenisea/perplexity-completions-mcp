@@ -1,54 +1,42 @@
-# Perplexity Search MCP Server
+# Perplexity Chat Completions MCP Server
 
-An MCP server implementation that integrates the Perplexity Search API to provide Claude with real-time web search capabilities.
+An MCP server implementation that integrates the Perplexity Chat Completions API to provide AI agents with AI-powered web search and real-time knowledge with **SSE streaming support**.
 
-> **Note:** This project was forked from [perplexityai/modelcontextprotocol](https://github.com/perplexityai/modelcontextprotocol) and has been modified to use only the Perplexity Search API.
+> **Note:** This server uses the Perplexity Chat Completions API (`/chat/completions`) for AI-generated answers with citations. For structured search results, see [perplexity-search-mcp](https://github.com/agenisea/perplexity-search-mcp).
 
 ## Quick Start Demo
 
-Once configured, Claude can perform real-time web searches directly within your conversations:
+Once configured with an MCP client, you can perform AI-powered web searches:
 
 ```
-You: "What are the latest AI developments in 2025?"
-Claude: [Uses perplexity-search tool]
-Claude: "Based on recent search results, here are the latest developments..."
+User: "What are the latest AI developments in 2025?"
+Assistant: [Uses perplexity-search tool]
+Assistant: "Based on real-time web research, here are the latest developments..."
 ```
 
-### Visual Guide
-
-**1. Enable the Tool**
-
-Click the Research button and ensure "perplexity-search" is toggled on:
-
-![MCP Tools Menu](./perplexity-search/assets/mcp-tools-menu.png)
-
-**2. Grant Permission**
-
-When Claude wants to search, you'll see a permission dialog showing the query:
-
-![Permission Dialog](./perplexity-search/assets/permission-dialog.png)
-
-**3. Get Results**
-
-Claude receives real-time search results with citations:
-
-![Search Results](./perplexity-search/assets/search-results.png)
+The tool provides AI-generated answers with automatic source citations, giving MCP clients access to current information beyond their training data.
 
 ## Overview
 
-This MCP (Model Context Protocol) server provides a tool for performing web searches using Perplexity's Search API. It leverages Perplexity's real-time web search technology to return ranked search results with titles, URLs, snippets, publication dates, and last updated timestamps.
+This MCP (Model Context Protocol) server provides AI-powered web search using Perplexity's **Chat Completions API** with **SSE (Server-Sent Events) streaming support**. Unlike traditional search APIs, this returns AI-generated answers with real-time web research and source citations.
 
-The Search API powers products with unparalleled real-time, web-wide research capabilities, making it ideal for applications that need current information and comprehensive web coverage.
+The Chat Completions API combines:
+- 🤖 **AI-Generated Answers**: Natural language responses powered by Perplexity's Sonar models
+- 🌐 **Real-Time Web Search**: Up-to-date information from across the internet
+- 📚 **Source Citations**: Every answer includes references with URLs
+- ⚡ **SSE Streaming**: Optional token-by-token streaming for real-time responses
 
 ## Why This MCP Server?
 
-**Give Claude Real-Time Knowledge**: Claude's training data has a cutoff date, but with this MCP server, Claude gains access to current information from across the web through Perplexity's Search API.
+**Give AI Agents Powerful Research Capabilities**: Instead of just returning search results, Perplexity's AI analyzes the web and generates comprehensive answers with citations - giving AI agents access to real-time knowledge.
 
 **Key Benefits:**
-- 🎯 **Accurate & Current**: Get real-time information instead of relying on potentially outdated training data
-- 🔗 **Source Citations**: Every result includes URLs and publication dates for verification
-- 🌐 **Comprehensive Coverage**: Search across the entire web, not just a limited knowledge base
-- ⚡ **Fast & Efficient**: Optimized search with configurable result limits and token extraction
+- 🎯 **AI-Generated Answers**: Get synthesized insights with web research, not just raw search results
+- 🔗 **Automatic Citations**: Every response includes source URLs for verification
+- ⚡ **SSE Streaming**: Enable real-time token-by-token responses (optional)
+- 🎚️ **Flexible Models**: Choose from 5 Sonar models including reasoning and deep research
+- 🔍 **Advanced Filters**: Filter by recency (day/week/month/year), search mode (web/academic/sec)
+- ⚡ **Cost-Effective**: Starting at $1/1M tokens with the base `sonar` model
 - 🛠️ **Developer-Friendly**: Simple setup with TypeScript support and clear documentation
 
 **Perfect For:**
@@ -73,9 +61,10 @@ This project is built with modern, well-documented technologies. Each component 
   - [TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) - Official TypeScript implementation
   - [MCP Documentation](https://modelcontextprotocol.io) - Complete guides and tutorials
 
-- **[Perplexity Search API](https://docs.perplexity.ai)**: Real-time web search with advanced filtering
-  - [Search API Guide](https://docs.perplexity.ai/guides/search-guide) - Complete implementation guide
-  - [API Reference](https://docs.perplexity.ai/api-reference/search-post) - Detailed endpoint documentation
+- **[Perplexity Chat Completions API](https://docs.perplexity.ai)**: AI-powered web search with SSE streaming
+  - [Chat Completions Guide](https://docs.perplexity.ai/guides/chat-completions) - Implementation guide
+  - [Streaming Guide](https://docs.perplexity.ai/guides/streaming) - SSE streaming documentation
+  - [API Reference](https://docs.perplexity.ai/api-reference/chat-completions-post) - Complete endpoint docs
   - [API Pricing](https://www.perplexity.ai/settings/api) - Current rates and limits
 
 ### Runtime & Package Management
@@ -106,11 +95,10 @@ This project is built with modern, well-documented technologies. Each component 
 
 ### Integration
 
-- **[Claude Desktop](https://www.anthropic.com/engineering/desktop-extensions)**: MCP client integration
-  - [Claude MCP Setup Guide](https://generect.com/blog/claude-mcp/) - Complete integration tutorial
-  - [MCP Server Configuration](https://www.getmesa.com/blog/how-to-connect-mcp-server-claude/) - Advanced setup patterns
+- **MCP Clients**: Any application supporting Model Context Protocol
+  - [MCP Client List](https://modelcontextprotocol.io/clients) - Available MCP clients
+  - [MCP Integration Guide](https://modelcontextprotocol.io/docs/concepts/architecture) - Protocol architecture
 
-> **Quick Reference**: For troubleshooting and advanced configuration, see our [DEPLOYMENT.md](perplexity-search/DEPLOYMENT.md) which includes platform-specific deployment guides and troubleshooting steps.
 
 ## Future Compatibility
 
@@ -151,33 +139,200 @@ The November 2025 release will be a **simple, non-breaking upgrade**:
 
 ## Features
 
-- 🔍 **Real-time Web Search**: Access up-to-date information from across the web using Perplexity's Search API
-- 📊 **Structured Results**: Returns formatted search results with titles, URLs, snippets, and timestamps
-- 🌍 **Regional Filtering**: Support for country-specific search results using ISO 3166-1 alpha-2 codes
-- 🔢 **Flexible Result Limits**: Configure result counts (1-20 results per query)
-- 🎯 **Multi-Query Support**: Process up to 5 search queries in a single request
-- ⚡ **Batch Operations**: Efficient parallel processing for multiple searches
-- 🔒 **Type-Safe Implementation**: Full TypeScript support for reliability and developer experience
+- 🤖 **AI-Generated Answers**: Get synthesized responses, not just raw search results
+- ⚡ **SSE Streaming**: Optional real-time token-by-token response streaming
+- 🔍 **Real-Time Web Search**: Access current information with automatic web research
+- 📚 **Automatic Citations**: Every answer includes source URLs and references
+- 🎚️ **Multiple Models**: Choose from `sonar`, `sonar-pro`, or `sonar-reasoning`
+- 🔍 **Advanced Filters**:
+  - Recency: Filter by `day`, `week`, `month`, `year`
+  - Domain: Search `web`, `academic`, or `sec` filings
+- 🎯 **Configurable Parameters**: Control temperature, max tokens, and more
+- 🔒 **Type-Safe Implementation**: Full TypeScript support with strict typing
 
 ## Tools
 
-### perplexity-search
+### perplexity-completions
 
-Performs web search using the Perplexity Search API and returns ranked search results.
+Performs AI-powered web search using Perplexity's Chat Completions API with optional SSE streaming.
 
 **Inputs:**
-- `query` (string | string[]): Search query string or array of query strings (max 5 queries)
-- `max_results` (number, optional): Maximum number of results to return (1-20, default: 10)
-- `max_tokens_per_page` (number, optional): Maximum tokens to extract per webpage (default: 1024)
-- `country` (string, optional): ISO 3166-1 alpha-2 country code for regional results (e.g., 'US', 'GB')
+- `query` (string, required): Search query or question to ask Perplexity AI
+- `model` (string, optional): Model to use - `sonar` (default), `sonar-pro`, `sonar-deep-research`, `sonar-reasoning`, `sonar-reasoning-pro`
+- `stream` (boolean, optional): Enable SSE streaming for real-time token-by-token responses (default: false)
+- `search_mode` (string, optional): Search mode - `web` (default), `academic`, `sec`
+- `recency_filter` (string, optional): Filter by time - `day`, `week`, `month`, `year`
+- `reasoning_effort` (string, optional): Computational effort for deep research - `low`, `medium`, `high` (only for sonar-deep-research)
+- `max_tokens` (number, optional): Maximum tokens in response (1-4096, default: 1024)
+- `temperature` (number, optional): Sampling temperature 0-2 (default: 0.7)
 
 **Output:**
-Formatted search results including:
-- Title
-- URL
-- Snippet
-- Publication date
-- Last updated timestamp
+AI-generated answer with citations including:
+- Natural language response synthesized from web sources
+- Source citations with titles and URLs
+- Formatted markdown with sections
+
+**Example (Non-streaming):**
+```json
+{
+  "query": "What are the latest developments in AI?",
+  "model": "sonar-pro",
+  "recency_filter": "week"
+}
+```
+
+**Example (SSE Streaming):**
+```json
+{
+  "query": "What are the latest developments in AI?",
+  "model": "sonar-pro",
+  "stream": true,
+  "recency_filter": "week"
+}
+```
+
+## SSE Streaming Support
+
+The server supports **Server-Sent Events (SSE)** streaming for real-time token-by-token responses from Perplexity AI. This enables LLM clients to display progressive responses as they are generated.
+
+### How It Works
+
+When `stream: true` is set in the tool arguments, the server:
+
+1. **Receives streaming data** from Perplexity Chat Completions API
+2. **Pipes SSE events** directly to the MCP client in real-time
+3. **Sends structured events** with content chunks and citations
+4. **Completes with [DONE]** signal when streaming finishes
+
+### SSE Event Format
+
+The server sends structured SSE events in JSON format:
+
+**Content Event (streamed tokens):**
+```
+data: {"type":"content","content":"AI has seen "}
+data: {"type":"content","content":"significant "}
+data: {"type":"content","content":"progress..."}
+```
+
+**Citations Event (at completion):**
+```
+data: {"type":"citations","content":"\n\n## Sources\n\n1. **Article Title**\n   https://example.com\n"}
+```
+
+**Completion Signal:**
+```
+data: [DONE]
+```
+
+**Error Event (if errors occur):**
+```
+data: {"type":"error","content":"Error message"}
+```
+
+### Client Integration
+
+**Making a streaming request:**
+
+```javascript
+const response = await fetch('http://localhost:8080/mcp/call', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Basic ' + btoa('username:password')
+  },
+  body: JSON.stringify({
+    name: 'perplexity-completions',
+    arguments: {
+      query: 'What are the latest AI developments?',
+      model: 'sonar',
+      stream: true
+    }
+  })
+});
+
+// Process SSE stream
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split('\n');
+  buffer = lines.pop() || '';
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const data = line.slice(6);
+
+      if (data === '[DONE]') {
+        console.log('Stream complete');
+        break;
+      }
+
+      const event = JSON.parse(data);
+
+      if (event.type === 'content') {
+        process.stdout.write(event.content); // Display token
+      } else if (event.type === 'citations') {
+        console.log(event.content); // Display sources
+      } else if (event.type === 'error') {
+        console.error('Error:', event.content);
+      }
+    }
+  }
+}
+```
+
+### Testing SSE Streaming
+
+Test the streaming functionality with the included test script:
+
+```bash
+# Set environment variables
+export PERPLEXITY_API_KEY=your_api_key
+export MCP_USER=your_username
+export MCP_PASS=your_password
+
+# Run the test
+node test-sse-stream.js
+```
+
+### Performance Benefits
+
+**Real-time feedback:**
+- ✅ Immediate response display (no wait for full completion)
+- ✅ Better user experience with progressive loading
+- ✅ Lower perceived latency
+
+**Efficient resource usage:**
+- ✅ No buffering of large responses in memory
+- ✅ Backpressure handling with stream flow control
+- ✅ Graceful connection management
+
+**Production considerations:**
+- ⚠️ Requires persistent HTTP connection (keep-alive)
+- ⚠️ Client must handle SSE parsing correctly
+- ⚠️ Network interruptions require reconnection logic
+
+### Non-streaming Mode
+
+If `stream: false` or `stream` is omitted, the server returns a complete JSON response:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "AI has seen significant progress...\n\n## Sources\n\n1. **Article**\n   https://example.com"
+    }
+  ],
+  "isError": false
+}
+```
 
 ## Installation
 
@@ -190,8 +345,8 @@ Formatted search results including:
 ### Step 1: Clone and Install
 
 ```bash
-git clone https://github.com/agenisea/perplexity-search-mcp.git
-cd perplexity-search-mcp/perplexity-search
+git clone https://github.com/agenisea/perplexity-completions-mcp.git
+cd perplexity-completions-mcp/perplexity-completions
 pnpm install
 ```
 
@@ -213,14 +368,19 @@ PERPLEXITY_API_KEY=your_api_key_here
 
 #### API Pricing & Rate Limits
 
-The Perplexity Search API operates on a pay-as-you-go model:
+The Perplexity Chat Completions API operates on a pay-as-you-go model:
 
-- **Pricing**: Based on API requests and token usage (check [Perplexity Pricing](https://www.perplexity.ai/settings/api) for current rates)
+- **Pricing**: Token-based pricing varies by model (check [Perplexity Pricing](https://docs.perplexity.ai/getting-started/pricing) for current rates)
+  - `sonar`: $1/1M tokens (input & output) - Most cost-effective
+  - `sonar-pro`: $3/1M input, $15/1M output
+  - `sonar-reasoning`: $1/1M input, $5/1M output
+  - `sonar-reasoning-pro`: $2/1M input, $8/1M output
+  - `sonar-deep-research`: $2/1M input, $8/1M output + additional fees
 - **Free Tier**: New accounts may receive initial credits for testing
 - **Rate Limits**: Varies by subscription tier (see your dashboard for specific limits)
 - **Credits**: Monitor your usage and credits in the [Perplexity API Settings](https://www.perplexity.ai/settings/api)
 
-> **Tip**: Use the `max_results` and `max_tokens_per_page` parameters to control costs and optimize performance based on your needs.
+> **Tip**: Use `max_tokens` and model selection to control costs. The base `sonar` model is most cost-effective for quick searches.
 
 ### Step 3: Build the Project
 
@@ -272,9 +432,11 @@ Test the search functionality with the included test script:
 node test-search.js
 ```
 
-## Claude Desktop Configuration
+## MCP Client Configuration
 
 ### Method 1: Stdio MCP Server (Local)
+
+For MCP clients that support stdio transport (e.g., Claude Desktop):
 
 Add this to your `claude_desktop_config.json`:
 
@@ -296,7 +458,7 @@ Add this to your `claude_desktop_config.json`:
 
 ### Method 2: HTTP MCP Server (Local or Remote)
 
-For HTTP-based connections (useful for Claude Code or remote deployments):
+For MCP clients that support HTTP transport:
 
 ```json
 {
@@ -341,9 +503,9 @@ fly secrets set MCP_PASS=your_password
 
 **Security Note**: The default configuration uses Fly.io's internal network (`*.internal`) for private access only. No public ports are exposed, making it suitable for secure MCP client connections.
 
-📖 **For complete deployment instructions, API documentation, and troubleshooting, see [DEPLOYMENT.md](perplexity-search/DEPLOYMENT.md)**
+📖 **For complete deployment instructions, see the Fly.io deployment section below**
 
-Then configure Claude to use your deployed server:
+Then configure your MCP client to use the deployed server:
 ```json
 {
   "mcpServers": {
@@ -453,17 +615,17 @@ Build and run with Docker:
 
 ```bash
 # Build the Docker image
-docker build -t perplexity-search-mcp perplexity-search/
+docker build -t perplexity-completions-mcp perplexity-completions/
 
 # Run the container (stdio mode)
-docker run -i --rm -e PERPLEXITY_API_KEY=your_api_key_here perplexity-search-mcp
+docker run -i --rm -e PERPLEXITY_API_KEY=your_api_key_here perplexity-completions-mcp
 
 # Run the container (HTTP mode)
 docker run -p 8080:8080 --rm \
   -e PERPLEXITY_API_KEY=your_api_key_here \
   -e MCP_USER=your_username \
   -e MCP_PASS=your_password \
-  perplexity-search-mcp node dist/server.js
+  perplexity-completions-mcp node dist/server.js
 ```
 
 Access the config file:
@@ -478,12 +640,12 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
 
 ## Verifying the Integration
 
-1. Open Claude Desktop
-2. Look for the hammer icon (🔨) in the interface
-3. Click it to see available MCP tools
-4. You should see `perplexity-search` listed
+1. Open your MCP client
+2. Look for the tools/integrations menu
+3. You should see `perplexity-search` listed as an available tool
+4. Test with a simple query to verify functionality
 
-If the tool appears, the integration is active and Claude can now perform web searches via Perplexity!
+If the tool appears and responds correctly, the integration is active!
 
 ## Advanced Configuration
 
@@ -507,82 +669,81 @@ For multi-query searches:
 }
 ```
 
-Refer to the official [Perplexity Search API documentation](https://docs.perplexity.ai/api-reference/search-post) for more details.
+Refer to the official [Perplexity Chat Completions API documentation](https://docs.perplexity.ai/api-reference/chat-completions-post) for more details.
 
-## About the Perplexity Search API
+## About the Perplexity Chat Completions API
 
-The [Perplexity Search API](https://www.perplexity.ai/hub/blog/introducing-the-perplexity-search-api) provides real-time web search capabilities with advanced filtering options, enabling developers to integrate powerful search functionality into their applications.
+The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/chat-completions-post) combines AI language models with real-time web search, providing comprehensive answers with automatic source citations.
 
 ### Key Capabilities
 
-**Real-Time Web Search**
-- Access current information from across the entire web
-- Results include titles, URLs, snippets, and publication timestamps
-- Automatically ranked by relevance and authority
+**AI-Generated Answers with Web Research**
+- Synthesizes information from multiple sources into coherent responses
+- Combines language model capabilities with real-time web search
+- Returns natural language answers instead of raw search results
+- Automatically includes source citations with every response
 
-**Advanced Filtering Options**
-- **Domain Filtering**: Search within specific domains (e.g., `arxiv.org`, `github.com`)
-- **Recency Filters**: Limit results by time period (day, week, month, year)
-- **Geographic Filtering**: Country-specific results using ISO country codes
-- **Result Limits**: Configure number of results (1-20) per query
+**5 Specialized Sonar Models**
+- **sonar**: Lightweight, cost-effective model for quick searches ($1/1M tokens)
+- **sonar-pro**: Advanced model with deeper content understanding ($3-$15/1M tokens)
+- **sonar-reasoning**: Fast problem-solving with step-by-step logic ($1-$5/1M tokens)
+- **sonar-reasoning-pro**: Enhanced multi-step reasoning ($2-$8/1M tokens)
+- **sonar-deep-research**: Exhaustive research and detailed reports ($2-$8/1M+ tokens)
 
-**Web-Grounded Responses**
-- Every result backed by real web sources with URLs
-- Publication dates and last updated timestamps for verification
-- Snippet extraction with configurable token limits
+**Advanced Search Controls**
+- **Search Modes**: `web` (default), `academic`, `sec` (SEC filings)
+- **Recency Filters**: Filter by `day`, `week`, `month`, `year`
+- **Reasoning Effort**: Control computational depth for deep research models
+- **SSE Streaming**: Optional token-by-token response streaming
+- **Temperature & Max Tokens**: Fine-tune response generation
 
-**Batch Processing**
-- Process up to 5 queries simultaneously
-- Efficient parallel search execution
-- Consistent result formatting across all queries
+**OpenAI API Compatible**
+- Drop-in replacement for OpenAI Chat Completions
+- Use existing OpenAI SDKs with just a base URL change
+- Same message format and parameter structure
+- Additional Perplexity-specific parameters for enhanced control
 
-### Search API vs Chat API
+### Chat Completions vs Search API
 
-**When to use the Search API** (this MCP server):
-- You need structured search results with URLs and metadata
-- You want control over result count and filtering
-- You're building search-focused features
-- You need raw search data for further processing
+**This server uses Chat Completions API** because:
+- ✅ AI-generated answers synthesized from web sources
+- ✅ Automatic reasoning and summarization
+- ✅ Built-in citation and source tracking
+- ✅ SSE streaming support for real-time responses
+- ✅ Multiple specialized models for different use cases
 
-**When to use the Chat API**:
-- You need conversational responses with citations
-- You want AI-generated summaries of search results
-- You're building chatbot or Q&A features
-- You need the "sonar" or "sonar-pro" models
-
-This MCP server uses the **Search API** to provide Claude with direct access to structured search results, enabling Claude to reason over raw web data and provide more nuanced responses.
+**Use the Search API instead** when you need:
+- Raw structured search results without AI synthesis
+- Direct control over result ranking and filtering
+- Batch processing of multiple search queries
+- Lower-level search data for custom processing
 
 ### Performance Characteristics
 
-- **Latency**: Typically <2 seconds for standard queries
-- **Freshness**: Real-time indexing of web content
-- **Coverage**: Comprehensive web-wide search across billions of pages
-- **Reliability**: Enterprise-grade infrastructure with high availability
+- **Latency**: 2-5 seconds for standard queries (varies by model)
+- **Streaming**: Real-time token delivery with SSE
+- **Citations**: Automatic source attribution with URLs
+- **Context**: Up to 200k tokens context window (model dependent)
 
 Learn more at:
-- [Perplexity Search API Overview](https://docs.perplexity.ai/getting-started/overview)
-- [API Reference Documentation](https://docs.perplexity.ai/api-reference/search-post)
-- [Introducing the Perplexity Search API](https://www.perplexity.ai/hub/blog/introducing-the-perplexity-search-api)
+- [Chat Completions API Reference](https://docs.perplexity.ai/api-reference/chat-completions-post)
+- [OpenAI Compatibility Guide](https://docs.perplexity.ai/guides/chat-completions-guide)
+- [Streaming Guide](https://docs.perplexity.ai/guides/streaming)
+- [Pricing Documentation](https://docs.perplexity.ai/getting-started/pricing)
 
 ## Project Structure
 
 ```
-perplexity-search-mcp/
-├── perplexity-search/
-│   ├── assets/            # Documentation images
-│   │   ├── mcp-tools-menu.png
-│   │   ├── permission-dialog.png
-│   │   └── search-results.png
+perplexity-completions-mcp/
+├── perplexity-completions/
 │   ├── dist/              # Compiled JavaScript (gitignored)
 │   ├── node_modules/      # Dependencies (gitignored)
-│   ├── DEPLOYMENT.md      # Complete Fly.io deployment guide
 │   ├── Dockerfile         # Docker container configuration
+│   ├── fly.toml           # Fly.io deployment configuration
 │   ├── index.ts           # Stdio MCP server implementation
 │   ├── server.ts          # HTTP MCP server implementation
 │   ├── package.json       # Node.js package configuration
-│   ├── package-lock.json  # npm lock file for reproducible builds
 │   ├── pnpm-lock.yaml     # pnpm lock file for reproducible builds
-│   ├── test-search.js     # Test script for search functionality
 │   ├── tsconfig.json      # TypeScript configuration
 │   ├── .env.local         # Local environment variables (gitignored)
 │   └── .env.local.example # Environment template
@@ -632,16 +793,16 @@ Error: PERPLEXITY_API_KEY environment variable is required
 - Check your internet connection
 - Ensure you have API credits available
 
-### MCP Server Not Showing in Claude
+### MCP Server Not Showing in Client
 
-1. Restart Claude Desktop completely
-2. Verify the path in `claude_desktop_config.json` is correct
-3. Check Claude's developer console for errors
+1. Restart your MCP client completely
+2. Verify the configuration file path is correct
+3. Check the client's developer console for errors
 4. Ensure the server builds without errors (`pnpm run build`)
 
 For additional troubleshooting, refer to:
-- [DEPLOYMENT.md](perplexity-search/DEPLOYMENT.md) - Complete troubleshooting for Fly.io deployment
 - [MCP Debugging Guide](https://modelcontextprotocol.io/docs/tools/debugging) - General MCP debugging
+- [Fly.io Logs](https://fly.io/docs/flyctl/logs/) - View application logs for deployment issues
 
 ## Security Best Practices
 
@@ -667,9 +828,9 @@ const apiKey = "pplx-xxxxxxxxxxxxx"
 - Immediately revoke and regenerate keys if compromised
 - Use separate keys for development, staging, and production environments
 
-### Claude Desktop Configuration Security
+### MCP Client Configuration Security
 
-When adding the API key to `claude_desktop_config.json`:
+When adding the API key to your MCP client configuration:
 
 ```json
 {
@@ -697,14 +858,9 @@ For production environments:
 - Monitor API usage for anomalies
 - Set up alerts for unusual activity or quota thresholds
 
-## Cursor Integration
+## Other MCP Client Integration
 
-You can use this MCP server with Cursor or any other application that supports the Model Context Protocol.
-
-1. Navigate to Cursor Settings
-2. Go to the MCP directory
-3. Click "Add new global MCP server"
-4. Insert the same configuration as used for Claude Desktop
+This server works with any MCP-compatible client. Configuration will vary by client - refer to your client's MCP integration documentation for specific setup instructions.
 
 ## Contributing
 
@@ -717,5 +873,5 @@ This MCP server is licensed under the MIT License. You are free to use, modify, 
 ## Credits
 
 - Forked from [perplexityai/modelcontextprotocol](https://github.com/perplexityai/modelcontextprotocol)
-- Powered by [Perplexity Search API](https://docs.perplexity.ai/api-reference/search-post)
+- Powered by [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/chat-completions-post)
 - Built with [Model Context Protocol SDK](https://github.com/modelcontextprotocol/sdk)
