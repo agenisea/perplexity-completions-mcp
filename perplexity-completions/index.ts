@@ -337,7 +337,7 @@ async function handleStreamingResponse(response: Response): Promise<string> {
 // Initialize the server with tool metadata and capabilities
 const server = new Server(
   {
-    name: "perplexity-search",
+    name: "perplexity-completions",
     version: "0.1.0",
   },
   {

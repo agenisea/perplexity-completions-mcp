@@ -10,7 +10,7 @@ Once configured with an MCP client, you can perform AI-powered web searches:
 
 ```
 User: "What are the latest AI developments in 2025?"
-Assistant: [Uses perplexity-search tool]
+Assistant: [Uses perplexity-completions tool]
 Assistant: "Based on real-time web research, here are the latest developments..."
 ```
 
@@ -354,7 +354,7 @@ pnpm install
 
 1. Sign up for a [Perplexity API account](https://www.perplexity.ai/settings/api)
 2. Generate your API key from the developer dashboard
-3. Create a `.env.local` file in the `perplexity-search` directory:
+3. Create a `.env.local` file in the `perplexity-completions` directory:
 
 ```bash
 cp .env.local.example .env.local
@@ -443,10 +443,10 @@ Add this to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "perplexity-search": {
+    "perplexity-completions": {
       "command": "node",
       "args": [
-        "/absolute/path/to/perplexity-search-mcp/perplexity-search/dist/index.js"
+        "/absolute/path/to/perplexity-completions-mcp/perplexity-completions/dist/index.js"
       ],
       "env": {
         "PERPLEXITY_API_KEY": "YOUR_API_KEY_HERE"
@@ -463,7 +463,7 @@ For MCP clients that support HTTP transport:
 ```json
 {
   "mcpServers": {
-    "perplexity-search": {
+    "perplexity-completions": {
       "url": "http://localhost:8080/mcp",
       "auth": {
         "type": "basic",
@@ -509,7 +509,7 @@ Then configure your MCP client to use the deployed server:
 ```json
 {
   "mcpServers": {
-    "perplexity-search": {
+    "perplexity-completions": {
       "url": "https://your-app.fly.dev/mcp",
       "auth": {
         "type": "basic",
@@ -529,9 +529,9 @@ To deploy to AWS with similar private network security, modify the configuration
 1. Build and push Docker image to ECR:
 ```bash
 # Build for AWS
-docker build -t perplexity-search-mcp .
-docker tag perplexity-search-mcp:latest your-account.dkr.ecr.region.amazonaws.com/perplexity-search-mcp:latest
-docker push your-account.dkr.ecr.region.amazonaws.com/perplexity-search-mcp:latest
+docker build -t perplexity-completions-mcp .
+docker tag perplexity-completions-mcp:latest your-account.dkr.ecr.region.amazonaws.com/perplexity-completions-mcp:latest
+docker push your-account.dkr.ecr.region.amazonaws.com/perplexity-completions-mcp:latest
 ```
 
 2. Create ECS task definition with environment variables and private networking:
@@ -552,7 +552,7 @@ docker push your-account.dkr.ecr.region.amazonaws.com/perplexity-search-mcp:late
 **AWS Lambda (with serverless framework):**
 1. Install serverless framework and create `serverless.yml`:
 ```yaml
-service: perplexity-search-mcp
+service: perplexity-completions-mcp
 provider:
   name: aws
   runtime: nodejs18.x
@@ -580,8 +580,8 @@ export const handler = serverlessExpress({ app });
 
 **Google Cloud Run (Private):**
 ```bash
-gcloud run deploy perplexity-search-mcp \
-  --image gcr.io/your-project/perplexity-search-mcp \
+gcloud run deploy perplexity-completions-mcp \
+  --image gcr.io/your-project/perplexity-completions-mcp \
   --platform managed \
   --no-allow-unauthenticated \
   --ingress internal \
@@ -592,8 +592,8 @@ gcloud run deploy perplexity-search-mcp \
 ```bash
 az container create \
   --resource-group myResourceGroup \
-  --name perplexity-search-mcp \
-  --image your-registry/perplexity-search-mcp \
+  --name perplexity-completions-mcp \
+  --image your-registry/perplexity-completions-mcp \
   --environment-variables PERPLEXITY_API_KEY=your_key MCP_USER=user MCP_PASS=pass
 ```
 
@@ -642,7 +642,7 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
 
 1. Open your MCP client
 2. Look for the tools/integrations menu
-3. You should see `perplexity-search` listed as an available tool
+3. You should see `perplexity-completions` listed as an available tool
 4. Test with a simple query to verify functionality
 
 If the tool appears and responds correctly, the integration is active!
@@ -835,7 +835,7 @@ When adding the API key to your MCP client configuration:
 ```json
 {
   "mcpServers": {
-    "perplexity-search": {
+    "perplexity-completions": {
       "env": {
         "PERPLEXITY_API_KEY": "your_api_key_here"
       }

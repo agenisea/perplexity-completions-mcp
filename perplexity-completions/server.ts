@@ -30,7 +30,7 @@ if (!MCP_USER || !MCP_PASS) {
 /**
  * Definition of the Perplexity Chat Completions Tool.
  */
-const PERPLEXITY_SEARCH_TOOL: Tool = {
+const PERPLEXITY_COMPLETIONS_TOOL: Tool = {
   name: 'perplexity-completions',
   description:
     'Performs AI-powered web search using the Perplexity Chat Completions API. ' +
@@ -513,7 +513,7 @@ async function runServer() {
           jsonrpc: '2.0',
           id: id,
           result: {
-            tools: [PERPLEXITY_SEARCH_TOOL]
+            tools: [PERPLEXITY_COMPLETIONS_TOOL]
           }
         });
       }
@@ -607,7 +607,7 @@ async function runServer() {
   // MCP tools endpoint (legacy support)
   app.get('/mcp/tools', basicAuthMiddleware, (_req, res) => {
     res.json({
-      tools: [PERPLEXITY_SEARCH_TOOL],
+      tools: [PERPLEXITY_COMPLETIONS_TOOL],
     });
   });
 
