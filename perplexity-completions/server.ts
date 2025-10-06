@@ -149,30 +149,8 @@ interface ChatCompletionResponse {
 }
 
 /**
- * Formats search results (citations) into a readable string.
- */
-function formatSearchResults(results: SearchResult[]): string {
-  if (!results || results.length === 0) {
-    return '';
-  }
-
-  let formatted = '\n\n## Sources\n\n';
-
-  results.forEach((result: SearchResult, index: number) => {
-    formatted += `${index + 1}. **${result.title}**\n`;
-    formatted += `   ${result.url}\n`;
-    if (result.snippet) {
-      formatted += `   ${result.snippet}\n`;
-    }
-    formatted += `\n`;
-  });
-
-  return formatted;
-}
-
-/**
  * Performs AI-powered search using the Perplexity Chat Completions API.
- * Returns the fetch Response object for streaming or accumulated string for non-streaming.
+ * Returns the fetch Response object for streaming or ChatCompletionResponse for non-streaming.
  */
 async function performSearch(
   query: string,
@@ -185,7 +163,7 @@ async function performSearch(
     max_tokens?: number;
     temperature?: number;
   } = {}
-): Promise<string | globalThis.Response> {
+): Promise<ChatCompletionResponse | globalThis.Response> {
   const url = 'https://api.perplexity.ai/chat/completions';
   const model = options.model || 'sonar';
   const stream = options.stream || false;
@@ -249,7 +227,7 @@ async function performSearch(
     return response;
   }
 
-  // Handle non-streaming response
+  // Handle non-streaming response - return Perplexity's native format
   let data: ChatCompletionResponse;
   try {
     data = await response.json();
@@ -257,79 +235,13 @@ async function performSearch(
     throw new Error(`Failed to parse JSON response: ${jsonError}`);
   }
 
-  const content = data.choices[0]?.message?.content || 'No response generated.';
-  const citations = data.search_results ? formatSearchResults(data.search_results) : '';
-
-  return content + citations;
-}
-
-/**
- * Handles SSE streaming response from the Chat Completions API.
- */
-async function handleStreamingResponse(response: globalThis.Response): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error('Response body is not readable');
-  }
-
-  const decoder = new TextDecoder();
-  let content = '';
-  let searchResults: SearchResult[] | undefined;
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-
-      // Keep the last incomplete line in the buffer
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.trim() || !line.startsWith('data: ')) {
-          continue;
-        }
-
-        const data = line.slice(6); // Remove 'data: ' prefix
-
-        if (data === '[DONE]') {
-          break;
-        }
-
-        try {
-          const chunk: StreamChunk = JSON.parse(data);
-
-          // Accumulate content
-          const delta = chunk.choices[0]?.delta?.content;
-          if (delta) {
-            content += delta;
-            // Log streaming chunks (visible in server logs)
-            process.stderr.write(delta);
-          }
-
-          // Capture search results from final chunks
-          if (chunk.search_results) {
-            searchResults = chunk.search_results;
-          }
-        } catch (e) {
-          // Skip malformed chunks
-          continue;
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const citations = searchResults ? formatSearchResults(searchResults) : '';
-  return content + citations;
+  // Return the complete Perplexity response
+  return data;
 }
 
 /**
  * Streams Perplexity response to client using Server-Sent Events (SSE).
+ * Passes through Perplexity's response format directly, including search_results.
  */
 async function streamPerplexityToSSE(
   perplexityResponse: globalThis.Response,
@@ -347,7 +259,6 @@ async function streamPerplexityToSSE(
 
   const decoder = new TextDecoder();
   let buffer = '';
-  let searchResults: SearchResult[] | undefined;
 
   try {
     while (true) {
@@ -368,11 +279,6 @@ async function streamPerplexityToSSE(
         const data = line.slice(6); // Remove 'data: ' prefix
 
         if (data === '[DONE]') {
-          // Send citations if available
-          if (searchResults) {
-            const citations = formatSearchResults(searchResults);
-            expressRes.write(`data: ${JSON.stringify({ type: 'citations', content: citations })}\n\n`);
-          }
           expressRes.write('data: [DONE]\n\n');
           expressRes.end();
           return;
@@ -381,16 +287,9 @@ async function streamPerplexityToSSE(
         try {
           const chunk: StreamChunk = JSON.parse(data);
 
-          // Stream content delta to client
-          const delta = chunk.choices[0]?.delta?.content;
-          if (delta) {
-            expressRes.write(`data: ${JSON.stringify({ type: 'content', content: delta })}\n\n`);
-          }
-
-          // Capture search results from final chunks
-          if (chunk.search_results) {
-            searchResults = chunk.search_results;
-          }
+          // Pass through Perplexity's chunk format directly
+          // This includes choices, search_results, and usage fields
+          expressRes.write(`data: ${JSON.stringify(chunk)}\n\n`);
         } catch (e) {
           // Skip malformed chunks
           continue;
@@ -399,14 +298,10 @@ async function streamPerplexityToSSE(
     }
 
     // End stream if no [DONE] was received
-    if (searchResults) {
-      const citations = formatSearchResults(searchResults);
-      expressRes.write(`data: ${JSON.stringify({ type: 'citations', content: citations })}\n\n`);
-    }
     expressRes.write('data: [DONE]\n\n');
     expressRes.end();
   } catch (error) {
-    expressRes.write(`data: ${JSON.stringify({ type: 'error', content: String(error) })}\n\n`);
+    expressRes.write(`data: ${JSON.stringify({ type: 'error', message: String(error) })}\n\n`);
     expressRes.end();
   } finally {
     reader.releaseLock();
@@ -552,12 +447,34 @@ async function runServer() {
               return streamPerplexityToSSE(result, res);
             }
 
-            // Handle non-streaming response
+            // Handle non-streaming response - return Perplexity's native format
+            const perplexityResponse = result as ChatCompletionResponse;
+            const content: any[] = [];
+
+            // Add the text response
+            if (perplexityResponse.choices?.[0]?.message?.content) {
+              content.push({
+                type: 'text',
+                text: perplexityResponse.choices[0].message.content
+              });
+            }
+
+            // Add structured search results if available
+            if (perplexityResponse.search_results && perplexityResponse.search_results.length > 0) {
+              content.push({
+                type: 'resource',
+                resource: {
+                  type: 'search_results',
+                  results: perplexityResponse.search_results
+                }
+              });
+            }
+
             return res.json({
               jsonrpc: '2.0',
               id: id,
               result: {
-                content: [{ type: 'text', text: result as string }]
+                content
               }
             });
           } catch (error) {
@@ -659,9 +576,31 @@ async function runServer() {
           return streamPerplexityToSSE(result, res);
         }
 
-        // Handle non-streaming response
+        // Handle non-streaming response - return Perplexity's native format
+        const perplexityResponse = result as ChatCompletionResponse;
+        const content: any[] = [];
+
+        // Add the text response
+        if (perplexityResponse.choices?.[0]?.message?.content) {
+          content.push({
+            type: 'text',
+            text: perplexityResponse.choices[0].message.content
+          });
+        }
+
+        // Add structured search results if available
+        if (perplexityResponse.search_results && perplexityResponse.search_results.length > 0) {
+          content.push({
+            type: 'resource',
+            resource: {
+              type: 'search_results',
+              results: perplexityResponse.search_results
+            }
+          });
+        }
+
         return res.json({
-          content: [{ type: 'text', text: result as string }],
+          content,
           isError: false,
         });
       } else {
