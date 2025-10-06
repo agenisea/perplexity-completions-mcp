@@ -18,13 +18,14 @@ The tool provides AI-generated answers with automatic source citations, giving M
 
 ## Overview
 
-This MCP (Model Context Protocol) server provides AI-powered web search using Perplexity's **Chat Completions API** with **SSE (Server-Sent Events) streaming support**. Unlike traditional search APIs, this returns AI-generated answers with real-time web research and source citations.
+This MCP (Model Context Protocol) server provides AI-powered web search using Perplexity's **Chat Completions API** with **SSE (Server-Sent Events) streaming support**. Unlike traditional search APIs, this returns AI-generated answers with real-time web research and structured source citations.
 
 The Chat Completions API combines:
 - 🤖 **AI-Generated Answers**: Natural language responses powered by Perplexity's Sonar models
 - 🌐 **Real-Time Web Search**: Up-to-date information from across the internet
-- 📚 **Source Citations**: Every answer includes references with URLs
-- ⚡ **SSE Streaming**: Optional token-by-token streaming for real-time responses
+- 📦 **Structured Responses**: Separate text and resource blocks for easy client-side processing
+- 📚 **Rich Citations**: Search results with titles, URLs, and snippets as structured resources
+- ⚡ **SSE Streaming**: Optional token-by-token streaming with native Perplexity format passthrough
 
 ## Why This MCP Server?
 
@@ -32,11 +33,12 @@ The Chat Completions API combines:
 
 **Key Benefits:**
 - 🎯 **AI-Generated Answers**: Get synthesized insights with web research, not just raw search results
-- 🔗 **Automatic Citations**: Every response includes source URLs for verification
-- ⚡ **SSE Streaming**: Enable real-time token-by-token responses (optional)
+- 📦 **Structured Responses**: Separate text and citation blocks for easy parsing and display
+- 🔗 **Rich Citations**: Search results with titles, URLs, and snippets as structured resources
+- ⚡ **SSE Streaming**: Real-time responses with native Perplexity format passthrough
 - 🎚️ **Flexible Models**: Choose from 5 Sonar models including reasoning and deep research
 - 🔍 **Advanced Filters**: Filter by recency (day/week/month/year), search mode (web/academic/sec)
-- ⚡ **Cost-Effective**: Starting at $1/1M tokens with the base `sonar` model
+- 💰 **Cost-Effective**: Starting at $1/1M tokens with the base `sonar` model
 - 🛠️ **Developer-Friendly**: Simple setup with TypeScript support and clear documentation
 
 **Perfect For:**
@@ -140,13 +142,15 @@ The November 2025 release will be a **simple, non-breaking upgrade**:
 ## Features
 
 - 🤖 **AI-Generated Answers**: Get synthesized responses, not just raw search results
-- ⚡ **SSE Streaming**: Optional real-time token-by-token response streaming
+- ⚡ **SSE Streaming**: Real-time token-by-token streaming with Perplexity's native format
+- 📦 **Structured Responses**: Separate text and resource blocks for easy parsing
 - 🔍 **Real-Time Web Search**: Access current information with automatic web research
-- 📚 **Automatic Citations**: Every answer includes source URLs and references
-- 🎚️ **Multiple Models**: Choose from `sonar`, `sonar-pro`, or `sonar-reasoning`
+- 📚 **Structured Citations**: Search results with titles, URLs, and snippets as resource objects
+- 🎚️ **Multiple Models**: Choose from `sonar`, `sonar-pro`, `sonar-reasoning`, `sonar-reasoning-pro`, `sonar-deep-research`
 - 🔍 **Advanced Filters**:
   - Recency: Filter by `day`, `week`, `month`, `year`
   - Domain: Search `web`, `academic`, or `sec` filings
+  - Reasoning Effort: Control depth for `sonar-deep-research`
 - 🎯 **Configurable Parameters**: Control temperature, max tokens, and more
 - 🔒 **Type-Safe Implementation**: Full TypeScript support with strict typing
 
@@ -167,10 +171,10 @@ Performs AI-powered web search using Perplexity's Chat Completions API with opti
 - `temperature` (number, optional): Sampling temperature 0-2 (default: 0.7)
 
 **Output:**
-AI-generated answer with citations including:
-- Natural language response synthesized from web sources
-- Source citations with titles and URLs
-- Formatted markdown with sections
+Structured content array with:
+- **Text block**: AI-generated natural language response
+- **Resource block**: Structured search results (citations) with titles, URLs, and snippets
+- Content formatted for easy parsing and display
 
 **Example (Non-streaming):**
 ```json
@@ -200,24 +204,50 @@ The server supports **Server-Sent Events (SSE)** streaming for real-time token-b
 When `stream: true` is set in the tool arguments, the server:
 
 1. **Receives streaming data** from Perplexity Chat Completions API
-2. **Pipes SSE events** directly to the MCP client in real-time
-3. **Sends structured events** with content chunks and citations
+2. **Passes through native format** directly to the MCP client in real-time
+3. **Preserves all fields** including choices, search_results, and usage
 4. **Completes with [DONE]** signal when streaming finishes
 
 ### SSE Event Format
 
-The server sends structured SSE events in JSON format:
+The server passes through Perplexity's native SSE chunk format:
 
-**Content Event (streamed tokens):**
-```
-data: {"type":"content","content":"AI has seen "}
-data: {"type":"content","content":"significant "}
-data: {"type":"content","content":"progress..."}
+**Content Chunk (streamed tokens):**
+```json
+data: {
+  "id": "chatcmpl-xyz",
+  "model": "sonar",
+  "choices": [{
+    "index": 0,
+    "delta": { "content": "AI has seen " },
+    "finish_reason": null
+  }]
+}
 ```
 
-**Citations Event (at completion):**
-```
-data: {"type":"citations","content":"\n\n## Sources\n\n1. **Article Title**\n   https://example.com\n"}
+**Final Chunk (with search results):**
+```json
+data: {
+  "id": "chatcmpl-xyz",
+  "model": "sonar",
+  "choices": [{
+    "index": 0,
+    "delta": { "content": "" },
+    "finish_reason": "stop"
+  }],
+  "search_results": [
+    {
+      "title": "Article Title",
+      "url": "https://example.com",
+      "snippet": "Brief excerpt..."
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 50,
+    "total_tokens": 60
+  }
+}
 ```
 
 **Completion Signal:**
@@ -226,8 +256,8 @@ data: [DONE]
 ```
 
 **Error Event (if errors occur):**
-```
-data: {"type":"error","content":"Error message"}
+```json
+data: {"type":"error","message":"Error message"}
 ```
 
 ### Client Integration
@@ -269,18 +299,39 @@ while (true) {
       const data = line.slice(6);
 
       if (data === '[DONE]') {
-        console.log('Stream complete');
+        console.log('\nStream complete');
         break;
       }
 
-      const event = JSON.parse(data);
+      const chunk = JSON.parse(data);
 
-      if (event.type === 'content') {
-        process.stdout.write(event.content); // Display token
-      } else if (event.type === 'citations') {
-        console.log(event.content); // Display sources
-      } else if (event.type === 'error') {
-        console.error('Error:', event.content);
+      // Handle error events
+      if (chunk.type === 'error') {
+        console.error('Error:', chunk.message);
+        continue;
+      }
+
+      // Extract content from Perplexity's chunk format
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) {
+        process.stdout.write(delta); // Display token
+      }
+
+      // Display search results when available
+      if (chunk.search_results) {
+        console.log('\n\nSources:');
+        chunk.search_results.forEach((result, i) => {
+          console.log(`${i + 1}. ${result.title}`);
+          console.log(`   ${result.url}`);
+          if (result.snippet) {
+            console.log(`   ${result.snippet}`);
+          }
+        });
+      }
+
+      // Display usage stats
+      if (chunk.usage) {
+        console.log('\nUsage:', chunk.usage);
       }
     }
   }
@@ -320,19 +371,39 @@ node test-sse-stream.js
 
 ### Non-streaming Mode
 
-If `stream: false` or `stream` is omitted, the server returns a complete JSON response:
+If `stream: false` or `stream` is omitted, the server returns structured content:
 
+**Response format:**
 ```json
 {
   "content": [
     {
       "type": "text",
-      "text": "AI has seen significant progress...\n\n## Sources\n\n1. **Article**\n   https://example.com"
+      "text": "AI has seen significant progress in 2025..."
+    },
+    {
+      "type": "resource",
+      "resource": {
+        "type": "search_results",
+        "results": [
+          {
+            "title": "AI Advances in 2025",
+            "url": "https://example.com/ai-2025",
+            "snippet": "Major breakthroughs in..."
+          }
+        ]
+      }
     }
   ],
   "isError": false
 }
 ```
+
+**Benefits of structured content:**
+- ✅ Separate text response from citations for easier parsing
+- ✅ Structured search results with title, URL, and snippet
+- ✅ Compatible with MCP resource protocol
+- ✅ Enables client-side formatting and presentation control
 
 ## Installation
 
@@ -708,9 +779,10 @@ The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/c
 **This server uses Chat Completions API** because:
 - ✅ AI-generated answers synthesized from web sources
 - ✅ Automatic reasoning and summarization
-- ✅ Built-in citation and source tracking
-- ✅ SSE streaming support for real-time responses
+- ✅ Structured citations as separate resource blocks
+- ✅ SSE streaming with native Perplexity format passthrough
 - ✅ Multiple specialized models for different use cases
+- ✅ Usage statistics and metadata in responses
 
 **Use the Search API instead** when you need:
 - Raw structured search results without AI synthesis
