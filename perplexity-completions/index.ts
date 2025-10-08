@@ -7,6 +7,18 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { Agent, fetch as undiciFetch } from 'undici';
+
+/**
+ * Create persistent HTTP agent with keep-alive for connection pooling.
+ * Reduces TCP connection overhead and improves latency.
+ */
+const httpAgent = new Agent({
+  keepAliveTimeout: 30000, // Keep connections alive for 30s
+  keepAliveMaxTimeout: 60000, // Max 60s keep-alive
+  pipelining: 1, // Enable HTTP pipelining
+  connections: 10, // Max 10 concurrent connections per host
+});
 
 /**
  * Definition of the Perplexity Chat Completions Tool.
@@ -32,7 +44,8 @@ const PERPLEXITY_SEARCH_TOOL: Tool = {
       },
       stream: {
         type: "boolean",
-        description: "Enable SSE streaming for real-time token-by-token responses (default: false)",
+        description: "Enable SSE streaming for real-time token-by-token responses (default: true for faster TTFT)",
+        default: true,
       },
       search_mode: {
         type: "string",
@@ -61,6 +74,11 @@ const PERPLEXITY_SEARCH_TOOL: Tool = {
         minimum: 0,
         maximum: 2,
       },
+      search_context_size: {
+        type: "string",
+        description: "Search context depth: 'low' (faster, fewer sources), 'medium' (balanced), 'high' (comprehensive, more sources). Default: 'medium'",
+        enum: ["low", "medium", "high"],
+      },
     },
     required: ["query"],
   },
@@ -71,14 +89,6 @@ const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 if (!PERPLEXITY_API_KEY) {
   console.error("Error: PERPLEXITY_API_KEY environment variable is required");
   process.exit(1);
-}
-
-/**
- * Interface for chat completion messages.
- */
-interface Message {
-  role: "system" | "user" | "assistant";
-  content: string;
 }
 
 /**
@@ -146,6 +156,61 @@ interface ChatCompletionResponse {
 }
 
 /**
+ * HTTP status codes that should trigger a retry.
+ */
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+/**
+ * Retry fetch with exponential backoff for transient failures.
+ */
+async function retryFetch(
+  url: string,
+  options: RequestInit,
+  maxAttempts = 2,
+  baseDelayMs = 300
+): Promise<Response> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (options.signal?.aborted) {
+      throw new DOMException('Request aborted', 'AbortError');
+    }
+
+    try {
+      // Use keep-alive agent for persistent connections
+      const response = await undiciFetch(url, { ...options as any, dispatcher: httpAgent }) as unknown as Response;
+
+      // Return immediately if success or non-retryable error
+      if (response.ok || !RETRYABLE_STATUS.has(response.status)) {
+        return response;
+      }
+
+      // Last attempt - return even if failed
+      if (attempt === maxAttempts - 1) {
+        return response;
+      }
+
+      console.error(`[MCP] Perplexity API returned ${response.status}, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
+
+      if (attempt === maxAttempts - 1) {
+        throw error;
+      }
+
+      console.error(`[MCP] Fetch error: ${error}, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
+    }
+
+    // Exponential backoff with jitter
+    const delay = baseDelayMs * Math.pow(2, attempt);
+    const jitter = Math.random() * 0.3 * delay;
+    await new Promise(resolve => setTimeout(resolve, delay + jitter));
+  }
+
+  throw new Error('retryFetch reached unexpected state');
+}
+
+/**
  * Formats search results (citations) into a readable string.
  *
  * @param {SearchResult[]} results - Array of search results from the API.
@@ -189,11 +254,13 @@ async function performSearch(
     reasoning_effort?: string;
     max_tokens?: number;
     temperature?: number;
+    timeout?: number;
   } = {}
 ): Promise<string> {
   const url = "https://api.perplexity.ai/chat/completions";
   const model = options.model || "sonar";
-  const stream = options.stream || false;
+  const stream = options.stream !== undefined ? options.stream : true; // Default to streaming for faster TTFT
+  const timeout = options.timeout || 15000; // Default 15s timeout
 
   const body: any = {
     model,
@@ -223,17 +290,38 @@ async function performSearch(
     body.temperature = options.temperature;
   }
 
+  // Create AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  // Diagnostic timing
+  const startTime = Date.now();
+  console.error(`[MCP] Starting Perplexity request at ${new Date().toISOString()}`);
+  console.error(`[MCP] Request params: model=${model}, stream=${stream}, timeout=${timeout}ms`);
+
   let response;
   try {
-    response = await fetch(url, {
+    response = await retryFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
       },
       body: JSON.stringify(body),
-    });
+      signal: controller.signal,
+    }, 2, 300); // 2 attempts, 300ms base delay
+
+    const duration = Date.now() - startTime;
+    console.error(`[MCP] Perplexity response received after ${duration}ms (status: ${response.status})`);
+    clearTimeout(timeoutId);
   } catch (error) {
+    const duration = Date.now() - startTime;
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`[MCP] Request aborted after ${duration}ms (timeout: ${timeout}ms)`);
+      throw new Error(`Perplexity API timeout after ${timeout}ms`);
+    }
+    console.error(`[MCP] Request failed after ${duration}ms: ${error}`);
     throw new Error(`Network error while calling Perplexity API: ${error}`);
   }
 
@@ -397,6 +485,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           temperature: typeof temperature === "number" ? temperature : undefined,
         });
 
+        // Note: index.ts returns formatted text with citations, not raw Response
+        // The performSearch function always returns formatted string in stdio mode
         return {
           content: [{ type: "text", text: result }],
           isError: false,

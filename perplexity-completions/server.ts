@@ -2,6 +2,7 @@
 
 import express from 'express';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 /**
  * HTTP server wrapper for MCP Perplexity Chat Completions
@@ -15,6 +16,17 @@ const PORT = process.env.PORT || 8080;
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 const MCP_USER = process.env.MCP_USER;
 const MCP_PASS = process.env.MCP_PASS;
+
+/**
+ * Create persistent HTTP agent with keep-alive for connection pooling.
+ * Reduces TCP connection overhead and improves latency on subsequent requests.
+ */
+const httpAgent = new Agent({
+  keepAliveTimeout: 60000, // Keep connections alive for 60s
+  keepAliveMaxTimeout: 120000, // Max 120s keep-alive
+  pipelining: 1, // Enable HTTP pipelining
+  connections: 10, // Max 10 concurrent connections per host
+});
 
 // Validate required environment variables
 if (!PERPLEXITY_API_KEY) {
@@ -50,7 +62,8 @@ const PERPLEXITY_COMPLETIONS_TOOL: Tool = {
       },
       stream: {
         type: 'boolean',
-        description: 'Enable SSE streaming for real-time token-by-token responses (default: false)',
+        description: 'Enable SSE streaming for real-time token-by-token responses (default: true for faster TTFT)',
+        default: true,
       },
       search_mode: {
         type: 'string',
@@ -78,6 +91,11 @@ const PERPLEXITY_COMPLETIONS_TOOL: Tool = {
         description: 'Sampling temperature 0-2 (default: 0.7)',
         minimum: 0,
         maximum: 2,
+      },
+      search_context_size: {
+        type: 'string',
+        description: "Search context depth: 'low' (faster, fewer sources), 'medium' (balanced), 'high' (comprehensive, more sources). Default: 'medium'",
+        enum: ['low', 'medium', 'high'],
       },
     },
     required: ['query'],
@@ -149,6 +167,61 @@ interface ChatCompletionResponse {
 }
 
 /**
+ * HTTP status codes that should trigger a retry.
+ */
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+/**
+ * Retry fetch with exponential backoff for transient failures.
+ */
+async function retryFetch(
+  url: string,
+  options: RequestInit,
+  maxAttempts = 2,
+  baseDelayMs = 300
+): Promise<globalThis.Response> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (options.signal?.aborted) {
+      throw new DOMException('Request aborted', 'AbortError');
+    }
+
+    try {
+      // Use keep-alive agent for connection pooling and reduced latency
+      const response = await undiciFetch(url, { ...options as any, dispatcher: httpAgent }) as unknown as globalThis.Response;
+
+      // Return immediately if success or non-retryable error
+      if (response.ok || !RETRYABLE_STATUS.has(response.status)) {
+        return response;
+      }
+
+      // Last attempt - return even if failed
+      if (attempt === maxAttempts - 1) {
+        return response;
+      }
+
+      console.error(`[MCP] Perplexity API returned ${response.status}, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
+
+      if (attempt === maxAttempts - 1) {
+        throw error;
+      }
+
+      console.error(`[MCP] Fetch error: ${error}, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
+    }
+
+    // Exponential backoff with jitter
+    const delay = baseDelayMs * Math.pow(2, attempt);
+    const jitter = Math.random() * 0.3 * delay;
+    await new Promise(resolve => setTimeout(resolve, delay + jitter));
+  }
+
+  throw new Error('retryFetch reached unexpected state');
+}
+
+/**
  * Performs AI-powered search using the Perplexity Chat Completions API.
  * Returns the fetch Response object for streaming or ChatCompletionResponse for non-streaming.
  */
@@ -162,11 +235,14 @@ async function performSearch(
     reasoning_effort?: string;
     max_tokens?: number;
     temperature?: number;
+    search_context_size?: string;
+    timeout?: number;
   } = {}
 ): Promise<ChatCompletionResponse | globalThis.Response> {
   const url = 'https://api.perplexity.ai/chat/completions';
   const model = options.model || 'sonar';
-  const stream = options.stream || false;
+  const stream = options.stream !== undefined ? options.stream : true; // Default to streaming for faster TTFT
+  const timeout = options.timeout || 15000; // Default 15s timeout
 
   const body: any = {
     model,
@@ -195,18 +271,44 @@ async function performSearch(
   if (options.temperature !== undefined) {
     body.temperature = options.temperature;
   }
+  if (options.search_context_size) {
+    body.web_search_options = {
+      search_context_size: options.search_context_size
+    };
+  }
+
+  // Create AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  // Diagnostic timing
+  const startTime = Date.now();
+  console.error(`[MCP] Starting Perplexity request at ${new Date().toISOString()}`);
+  console.error(`[MCP] Request params: model=${model}, stream=${stream}, timeout=${timeout}ms`);
 
   let response;
   try {
-    response = await fetch(url, {
+    response = await retryFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
       },
       body: JSON.stringify(body),
-    });
+      signal: controller.signal,
+    }, 2, 300); // 2 attempts, 300ms base delay
+
+    const duration = Date.now() - startTime;
+    console.error(`[MCP] Perplexity response received after ${duration}ms (status: ${response.status})`);
+    clearTimeout(timeoutId);
   } catch (error) {
+    const duration = Date.now() - startTime;
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`[MCP] Request aborted after ${duration}ms (timeout: ${timeout}ms)`);
+      throw new Error(`Perplexity API timeout after ${timeout}ms`);
+    }
+    console.error(`[MCP] Request failed after ${duration}ms: ${error}`);
     throw new Error(`Network error while calling Perplexity API: ${error}`);
   }
 
@@ -240,25 +342,22 @@ async function performSearch(
 }
 
 /**
- * Streams Perplexity response to client using Server-Sent Events (SSE).
- * Passes through Perplexity's response format directly, including search_results.
+ * Consumes Perplexity streaming response and returns complete ChatCompletionResponse.
+ * Used for legacy endpoints that don't support SSE streaming.
  */
-async function streamPerplexityToSSE(
-  perplexityResponse: globalThis.Response,
-  expressRes: express.Response
-): Promise<void> {
+async function consumePerplexityStream(
+  perplexityResponse: globalThis.Response
+): Promise<ChatCompletionResponse> {
   const reader = perplexityResponse.body?.getReader();
   if (!reader) {
     throw new Error('Response body is not readable');
   }
 
-  // Set SSE headers
-  expressRes.setHeader('Content-Type', 'text/event-stream');
-  expressRes.setHeader('Cache-Control', 'no-cache');
-  expressRes.setHeader('Connection', 'keep-alive');
-
   const decoder = new TextDecoder();
   let buffer = '';
+  let content = '';
+  let searchResults: SearchResult[] | undefined;
+  let lastChunk: StreamChunk | undefined;
 
   try {
     while (true) {
@@ -279,17 +378,23 @@ async function streamPerplexityToSSE(
         const data = line.slice(6); // Remove 'data: ' prefix
 
         if (data === '[DONE]') {
-          expressRes.write('data: [DONE]\n\n');
-          expressRes.end();
-          return;
+          break;
         }
 
         try {
           const chunk: StreamChunk = JSON.parse(data);
+          lastChunk = chunk;
 
-          // Pass through Perplexity's chunk format directly
-          // This includes choices, search_results, and usage fields
-          expressRes.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          // Accumulate content from deltas
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            content += delta;
+          }
+
+          // Capture search results (only store once)
+          if (chunk.search_results && !searchResults) {
+            searchResults = chunk.search_results;
+          }
         } catch (e) {
           // Skip malformed chunks
           continue;
@@ -297,11 +402,169 @@ async function streamPerplexityToSSE(
       }
     }
 
-    // End stream if no [DONE] was received
-    expressRes.write('data: [DONE]\n\n');
+    console.error(`[MCP] Stream consumed: ${content.length} chars, ${searchResults?.length || 0} sources`);
+
+    // Return ChatCompletionResponse format
+    return {
+      id: lastChunk?.id || 'unknown',
+      model: lastChunk?.model || 'sonar',
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: content || 'No response generated.'
+        },
+        finish_reason: 'stop',
+        index: 0
+      }],
+      search_results: searchResults,
+      usage: lastChunk?.usage
+    };
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Streams Perplexity response as JSON-RPC formatted SSE messages.
+ * Wraps each chunk in proper MCP protocol format for client consumption.
+ */
+async function streamPerplexityToJsonRpcSSE(
+  perplexityResponse: globalThis.Response,
+  expressRes: express.Response,
+  requestId: string | number
+): Promise<void> {
+  const reader = perplexityResponse.body?.getReader();
+  if (!reader) {
+    throw new Error('Response body is not readable');
+  }
+
+  // Set SSE headers
+  expressRes.setHeader('Content-Type', 'text/event-stream');
+  expressRes.setHeader('Cache-Control', 'no-cache');
+  expressRes.setHeader('Connection', 'keep-alive');
+  expressRes.setHeader('X-Accel-Buffering', 'no');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let accumulatedContent = '';
+  let searchResults: SearchResult[] | undefined;
+
+  console.error('[MCP] Starting JSON-RPC SSE stream');
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+
+      // Keep the last incomplete line in the buffer
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim() || !line.startsWith('data: ')) {
+          continue;
+        }
+
+        const data = line.slice(6); // Remove 'data: ' prefix
+
+        if (data === '[DONE]') {
+          // Send final JSON-RPC response with complete result
+          const finalResponse = {
+            jsonrpc: '2.0',
+            id: requestId,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: accumulatedContent
+                },
+                ...(searchResults ? [{
+                  type: 'resource',
+                  resource: {
+                    type: 'search_results',
+                    results: searchResults
+                  }
+                }] : [])
+              ]
+            }
+          };
+
+          console.error(`[MCP] Sending final response: ${accumulatedContent.length} chars, ${searchResults?.length || 0} sources`);
+          expressRes.write(`data: ${JSON.stringify(finalResponse)}\n\n`);
+          expressRes.end();
+          return;
+        }
+
+        try {
+          const chunk: StreamChunk = JSON.parse(data);
+
+          // Accumulate content
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            accumulatedContent += delta;
+
+            // Send streaming notification with partial content
+            const notification = {
+              jsonrpc: '2.0',
+              method: 'notifications/progress',
+              params: {
+                progressToken: requestId,
+                progress: accumulatedContent.length,
+                total: null // Unknown total
+              }
+            };
+
+            expressRes.write(`data: ${JSON.stringify(notification)}\n\n`);
+          }
+
+          // Capture search results
+          if (chunk.search_results) {
+            searchResults = chunk.search_results;
+          }
+        } catch (e) {
+          // Skip malformed chunks
+          continue;
+        }
+      }
+    }
+
+    // If stream ended without [DONE], send final response
+    const finalResponse = {
+      jsonrpc: '2.0',
+      id: requestId,
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: accumulatedContent || 'No response generated.'
+          },
+          ...(searchResults ? [{
+            type: 'resource',
+            resource: {
+              type: 'search_results',
+              results: searchResults
+            }
+          }] : [])
+        ]
+      }
+    };
+
+    console.error(`[MCP] Stream ended, sending final response`);
+    expressRes.write(`data: ${JSON.stringify(finalResponse)}\n\n`);
     expressRes.end();
   } catch (error) {
-    expressRes.write(`data: ${JSON.stringify({ type: 'error', message: String(error) })}\n\n`);
+    console.error(`[MCP] SSE stream error: ${error}`);
+    const errorResponse = {
+      jsonrpc: '2.0',
+      id: requestId,
+      error: {
+        code: -32603,
+        message: String(error)
+      }
+    };
+    expressRes.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
     expressRes.end();
   } finally {
     reader.releaseLock();
@@ -428,38 +691,66 @@ async function runServer() {
               reasoning_effort,
               max_tokens,
               temperature,
+              search_context_size,
             } = args;
 
-            const shouldStream = typeof stream === 'boolean' ? stream : false;
+            console.error(`[MCP] tools/call request: query="${query.substring(0, 50)}..."`);
 
             const result = await performSearch(query, {
               model: typeof model === 'string' ? model : undefined,
-              stream: shouldStream,
+              stream: true, // Always stream from Perplexity for faster TTFT
               search_mode: typeof search_mode === 'string' ? search_mode : undefined,
               recency_filter: typeof recency_filter === 'string' ? recency_filter : undefined,
               reasoning_effort: typeof reasoning_effort === 'string' ? reasoning_effort : undefined,
               max_tokens: typeof max_tokens === 'number' ? max_tokens : undefined,
               temperature: typeof temperature === 'number' ? temperature : undefined,
+              search_context_size: typeof search_context_size === 'string' ? search_context_size : undefined,
             });
 
-            // Handle streaming response
-            if (shouldStream && result instanceof globalThis.Response) {
-              return streamPerplexityToSSE(result, res);
+            // Always consume Perplexity stream server-side
+            // StreamableHTTPClientTransport expects single JSON response, not SSE notifications
+            // Use duck typing: check if result has a readable body (works for both undici and native Response)
+            if (result && typeof result === 'object' && 'body' in result && result.body) {
+              console.error(`[MCP] Consuming Perplexity stream for Streamable HTTP client`);
+              const consumedResult = await consumePerplexityStream(result as globalThis.Response);
+
+              const content: any[] = [];
+              if (consumedResult.choices?.[0]?.message?.content) {
+                content.push({
+                  type: 'text',
+                  text: consumedResult.choices[0].message.content
+                });
+              }
+              if (consumedResult.search_results && consumedResult.search_results.length > 0) {
+                content.push({
+                  type: 'resource',
+                  resource: {
+                    type: 'search_results',
+                    results: consumedResult.search_results
+                  }
+                });
+              }
+
+              return res.json({
+                jsonrpc: '2.0',
+                id: id,
+                result: {
+                  content
+                }
+              });
             }
 
-            // Handle non-streaming response - return Perplexity's native format
+            // Fallback for non-streaming (should not reach here)
+            console.error(`[MCP] Unexpected non-streaming response`);
             const perplexityResponse = result as ChatCompletionResponse;
-            const content: any[] = [];
 
-            // Add the text response
+            const content: any[] = [];
             if (perplexityResponse.choices?.[0]?.message?.content) {
               content.push({
                 type: 'text',
                 text: perplexityResponse.choices[0].message.content
               });
             }
-
-            // Add structured search results if available
             if (perplexityResponse.search_results && perplexityResponse.search_results.length > 0) {
               content.push({
                 type: 'resource',
@@ -557,9 +848,11 @@ async function runServer() {
           reasoning_effort,
           max_tokens,
           temperature,
+          search_context_size,
         } = args;
 
         const shouldStream = typeof stream === 'boolean' ? stream : false;
+        console.error(`[MCP] /mcp/call shouldStream=${shouldStream}, stream param=${stream}, stream type=${typeof stream}`);
 
         const result = await performSearch(query, {
           model: typeof model === 'string' ? model : undefined,
@@ -569,15 +862,45 @@ async function runServer() {
           reasoning_effort: typeof reasoning_effort === 'string' ? reasoning_effort : undefined,
           max_tokens: typeof max_tokens === 'number' ? max_tokens : undefined,
           temperature: typeof temperature === 'number' ? temperature : undefined,
+          search_context_size: typeof search_context_size === 'string' ? search_context_size : undefined,
         });
 
-        // Handle streaming response
-        if (shouldStream && result instanceof globalThis.Response) {
-          return streamPerplexityToSSE(result, res);
+        console.error(`[MCP] /mcp/call Result type check: shouldStream=${shouldStream}, hasBody=${result && typeof result === 'object' && 'body' in result}`);
+
+        // Use duck typing to detect streaming response (works for both undici and native Response)
+        if (result && typeof result === 'object' && 'body' in result && result.body) {
+          console.error(`[MCP] /mcp/call Streaming Response detected - consuming stream for legacy endpoint`);
+          // Legacy endpoint: consume stream and return complete response
+          const consumedResult = await consumePerplexityStream(result as globalThis.Response);
+
+          const content: any[] = [];
+          if (consumedResult.choices?.[0]?.message?.content) {
+            content.push({
+              type: 'text',
+              text: consumedResult.choices[0].message.content
+            });
+          }
+          if (consumedResult.search_results && consumedResult.search_results.length > 0) {
+            content.push({
+              type: 'resource',
+              resource: {
+                type: 'search_results',
+                results: consumedResult.search_results
+              }
+            });
+          }
+
+          return res.json({
+            content,
+            isError: false,
+          });
         }
 
         // Handle non-streaming response - return Perplexity's native format
+        console.error(`[MCP] /mcp/call Non-streaming path: treating result as ChatCompletionResponse`);
         const perplexityResponse = result as ChatCompletionResponse;
+        console.error(`[MCP] /mcp/call perplexityResponse.choices=${JSON.stringify(perplexityResponse.choices)}, search_results=${JSON.stringify(perplexityResponse.search_results)}`);
+
         const content: any[] = [];
 
         // Add the text response
