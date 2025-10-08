@@ -14,8 +14,8 @@ import { Agent, fetch as undiciFetch } from 'undici';
  * Reduces TCP connection overhead and improves latency.
  */
 const httpAgent = new Agent({
-  keepAliveTimeout: 30000, // Keep connections alive for 30s
-  keepAliveMaxTimeout: 60000, // Max 60s keep-alive
+  keepAliveTimeout: 60000, // Keep connections alive for 60s
+  keepAliveMaxTimeout: 120000, // Max 120s keep-alive
   pipelining: 1, // Enable HTTP pipelining
   connections: 10, // Max 10 concurrent connections per host
 });
@@ -254,6 +254,7 @@ async function performSearch(
     reasoning_effort?: string;
     max_tokens?: number;
     temperature?: number;
+    search_context_size?: string;
     timeout?: number;
   } = {}
 ): Promise<string> {
@@ -288,6 +289,11 @@ async function performSearch(
   }
   if (options.temperature !== undefined) {
     body.temperature = options.temperature;
+  }
+  if (options.search_context_size) {
+    body.web_search_options = {
+      search_context_size: options.search_context_size
+    };
   }
 
   // Create AbortController for timeout
@@ -473,6 +479,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           reasoning_effort,
           max_tokens,
           temperature,
+          search_context_size,
         } = args;
 
         const result = await performSearch(query, {
@@ -483,6 +490,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           reasoning_effort: typeof reasoning_effort === "string" ? reasoning_effort : undefined,
           max_tokens: typeof max_tokens === "number" ? max_tokens : undefined,
           temperature: typeof temperature === "number" ? temperature : undefined,
+          search_context_size: typeof search_context_size === "string" ? search_context_size : undefined,
         });
 
         // Note: index.ts returns formatted text with citations, not raw Response
