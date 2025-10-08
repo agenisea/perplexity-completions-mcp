@@ -36,7 +36,7 @@ The Chat Completions API combines:
 - 📦 **Structured Responses**: Separate text and citation blocks for easy parsing and display
 - 🔗 **Rich Citations**: Search results with titles, URLs, and snippets as structured resources
 - ⚡ **Optimized Performance**: Sub-3s TTFT via internal streaming, complete responses to clients
-- 🎚️ **Flexible Models**: Choose from 5 Sonar models including reasoning and deep research
+- 🎚️ **Flexible Models**: `sonar` and `sonar-pro` for fast responses (HTTP server), or all 5 Sonar models (STDIO server)
 - 🔍 **Advanced Filters**: Filter by recency (day/week/month/year), search mode (web/academic/sec), context depth
 - 💰 **Cost-Effective**: Starting at $1/1M tokens with the base `sonar` model
 - 🛠️ **Developer-Friendly**: Simple setup with TypeScript support and clear documentation
@@ -146,12 +146,11 @@ The November 2025 release will be a **simple, non-breaking upgrade**:
 - 📦 **Structured Responses**: Separate text and resource blocks for easy parsing
 - 🔍 **Real-Time Web Search**: Access current information with automatic web research
 - 📚 **Structured Citations**: Search results with titles, URLs, and snippets as resource objects
-- 🎚️ **Multiple Models**: Choose from `sonar`, `sonar-pro`, `sonar-reasoning`, `sonar-reasoning-pro`, `sonar-deep-research`
+- 🎚️ **Multiple Models**: HTTP server supports `sonar` and `sonar-pro` for fast responses; STDIO server supports all 5 models including slower reasoning models
 - 🔍 **Advanced Filters**:
   - Recency: Filter by `day`, `week`, `month`, `year`
   - Domain: Search `web`, `academic`, or `sec` filings
   - Search Context: Control depth with `low` (faster, fewer sources), `medium` (balanced), `high` (comprehensive)
-  - Reasoning Effort: Control depth for `sonar-deep-research`
 - 🎯 **Configurable Parameters**: Control temperature, max tokens, and more
 - ⚡ **Performance Features**: Keep-alive connection pooling, automatic retries, 15s timeout handling
 - 🔒 **Type-Safe Implementation**: Full TypeScript support with strict typing
@@ -164,14 +163,19 @@ Performs AI-powered web search using Perplexity's Chat Completions API with perf
 
 **Inputs:**
 - `query` (string, required): Search query or question to ask Perplexity AI
-- `model` (string, optional): Model to use - `sonar` (default), `sonar-pro`, `sonar-deep-research`, `sonar-reasoning`, `sonar-reasoning-pro`
+- `model` (string, optional): Model to use
+  - **HTTP Server (Recommended)**: `sonar` (default, fastest), `sonar-pro` (advanced) - optimized for production performance
+  - **STDIO Server**: All models including `sonar-deep-research`, `sonar-reasoning`, `sonar-reasoning-pro` (slower models may cause timeouts)
 - `stream` (boolean, optional): Enable internal streaming from Perplexity for faster TTFT (default: true, always returns complete response to client)
 - `search_mode` (string, optional): Search mode - `web` (default), `academic`, `sec`
 - `recency_filter` (string, optional): Filter by time - `day`, `week`, `month`, `year`
 - `search_context_size` (string, optional): Search context depth - `low` (faster, fewer sources), `medium` (balanced, default), `high` (comprehensive, more sources)
-- `reasoning_effort` (string, optional): Computational effort for deep research - `low`, `medium`, `high` (only for sonar-deep-research)
-- `max_tokens` (number, optional): Maximum tokens in response (1-4096, default: 1024)
+- `max_tokens` (number, optional): Maximum tokens in response
+  - **HTTP Server**: 1-2048 tokens (default: 1024) - limited for cost control
+  - **STDIO Server**: 1-4096 tokens (default: 1024)
 - `temperature` (number, optional): Sampling temperature 0-2 (default: 0.7)
+
+> **Note:** The HTTP server limits models to `sonar` and `sonar-pro` and caps max_tokens at 2048 to optimize for performance and cost. Reasoning models and higher token limits are available in the STDIO server but may incur higher costs and longer response times (15-45s+).
 
 **Output:**
 Structured content array with:
@@ -594,15 +598,15 @@ You can customize search parameters directly in your tool calls:
 }
 ```
 
-**Deep research with reasoning:**
+**Deep research with reasoning (STDIO server only):**
 ```json
 {
   "query": "AI safety implications",
   "model": "sonar-deep-research",
-  "reasoning_effort": "high",
   "temperature": 0.2
 }
 ```
+> **Note:** Deep research and reasoning models are only available in the STDIO server due to longer response times (30-60s+) that may exceed HTTP client timeouts.
 
 Refer to the official [Perplexity Chat Completions API documentation](https://docs.perplexity.ai/api-reference/chat-completions-post) for more details.
 
@@ -619,17 +623,16 @@ The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/c
 - Automatically includes source citations with every response
 
 **5 Specialized Sonar Models**
-- **sonar**: Lightweight, cost-effective model for quick searches ($1/1M tokens)
-- **sonar-pro**: Advanced model with deeper content understanding ($3-$15/1M tokens)
-- **sonar-reasoning**: Fast problem-solving with step-by-step logic ($1-$5/1M tokens)
-- **sonar-reasoning-pro**: Enhanced multi-step reasoning ($2-$8/1M tokens)
-- **sonar-deep-research**: Exhaustive research and detailed reports ($2-$8/1M+ tokens)
+- **sonar**: Lightweight, cost-effective model for quick searches ($1/1M tokens) - **Available in both servers**
+- **sonar-pro**: Advanced model with deeper content understanding ($3-$15/1M tokens) - **Available in both servers**
+- **sonar-reasoning**: Fast problem-solving with step-by-step logic ($1-$5/1M tokens) - **STDIO server only** (slow: 15-30s response time)
+- **sonar-reasoning-pro**: Enhanced multi-step reasoning ($2-$8/1M tokens) - **STDIO server only** (slow: 20-45s response time)
+- **sonar-deep-research**: Exhaustive research and detailed reports ($2-$8/1M+ tokens) - **STDIO server only** (very slow: 30-60s+ response time)
 
 **Advanced Search Controls**
 - **Search Modes**: `web` (default), `academic`, `sec` (SEC filings)
 - **Recency Filters**: Filter by `day`, `week`, `month`, `year`
 - **Search Context Size**: `low` (faster, fewer sources), `medium` (balanced), `high` (comprehensive)
-- **Reasoning Effort**: Control computational depth for deep research models
 - **Internal Streaming**: Enabled by default for sub-3s TTFT, transparent to clients
 - **Temperature & Max Tokens**: Fine-tune response generation
 

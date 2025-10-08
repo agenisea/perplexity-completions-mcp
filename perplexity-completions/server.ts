@@ -57,8 +57,8 @@ const PERPLEXITY_COMPLETIONS_TOOL: Tool = {
       },
       model: {
         type: 'string',
-        description: "Perplexity model: 'sonar', 'sonar-pro', 'sonar-deep-research', 'sonar-reasoning', 'sonar-reasoning-pro'",
-        enum: ['sonar', 'sonar-pro', 'sonar-deep-research', 'sonar-reasoning', 'sonar-reasoning-pro'],
+        description: "Perplexity model: 'sonar' (default, fastest), 'sonar-pro' (advanced)",
+        enum: ['sonar', 'sonar-pro'],
       },
       stream: {
         type: 'boolean',
@@ -75,16 +75,11 @@ const PERPLEXITY_COMPLETIONS_TOOL: Tool = {
         description: "Filter results by time: 'day', 'week', 'month', 'year'",
         enum: ['day', 'week', 'month', 'year'],
       },
-      reasoning_effort: {
-        type: 'string',
-        description: "Computational effort for deep research: 'low', 'medium', 'high' (only for sonar-deep-research)",
-        enum: ['low', 'medium', 'high'],
-      },
       max_tokens: {
         type: 'number',
-        description: 'Maximum tokens in response (default: 1024)',
+        description: 'Maximum tokens in response (default: 1024, max: 2048 for cost control)',
         minimum: 1,
-        maximum: 4096,
+        maximum: 2048,
       },
       temperature: {
         type: 'number',
@@ -232,7 +227,6 @@ async function performSearch(
     stream?: boolean;
     search_mode?: string;
     recency_filter?: string;
-    reasoning_effort?: string;
     max_tokens?: number;
     temperature?: number;
     search_context_size?: string;
@@ -261,9 +255,6 @@ async function performSearch(
   }
   if (options.recency_filter) {
     body.recency_filter = options.recency_filter;
-  }
-  if (options.reasoning_effort) {
-    body.reasoning_effort = options.reasoning_effort;
   }
   if (options.max_tokens) {
     body.max_tokens = options.max_tokens;
@@ -688,7 +679,6 @@ async function runServer() {
               stream,
               search_mode,
               recency_filter,
-              reasoning_effort,
               max_tokens,
               temperature,
               search_context_size,
@@ -701,7 +691,6 @@ async function runServer() {
               stream: true, // Always stream from Perplexity for faster TTFT
               search_mode: typeof search_mode === 'string' ? search_mode : undefined,
               recency_filter: typeof recency_filter === 'string' ? recency_filter : undefined,
-              reasoning_effort: typeof reasoning_effort === 'string' ? reasoning_effort : undefined,
               max_tokens: typeof max_tokens === 'number' ? max_tokens : undefined,
               temperature: typeof temperature === 'number' ? temperature : undefined,
               search_context_size: typeof search_context_size === 'string' ? search_context_size : undefined,
@@ -845,7 +834,6 @@ async function runServer() {
           stream,
           search_mode,
           recency_filter,
-          reasoning_effort,
           max_tokens,
           temperature,
           search_context_size,
@@ -859,7 +847,6 @@ async function runServer() {
           stream: shouldStream,
           search_mode: typeof search_mode === 'string' ? search_mode : undefined,
           recency_filter: typeof recency_filter === 'string' ? recency_filter : undefined,
-          reasoning_effort: typeof reasoning_effort === 'string' ? reasoning_effort : undefined,
           max_tokens: typeof max_tokens === 'number' ? max_tokens : undefined,
           temperature: typeof temperature === 'number' ? temperature : undefined,
           search_context_size: typeof search_context_size === 'string' ? search_context_size : undefined,
