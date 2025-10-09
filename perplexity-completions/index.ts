@@ -261,7 +261,7 @@ async function performSearch(
   const url = "https://api.perplexity.ai/chat/completions";
   const model = options.model || "sonar";
   const stream = options.stream !== undefined ? options.stream : true; // Default to streaming for faster TTFT
-  const timeout = options.timeout || 15000; // Default 15s timeout
+  const timeout = options.timeout || 30000; // Default 30s timeout (increased from 15s to handle comprehensive searches)
 
   const body: any = {
     model,
@@ -375,16 +375,35 @@ async function handleStreamingResponse(response: Response): Promise<string> {
   }
 
   const decoder = new TextDecoder();
-  let content = "";
+  const contentChunks: string[] = []; // Fix #1: Array-based buffering (O(n) instead of O(n²))
   let searchResults: SearchResult[] | undefined;
   let buffer = "";
+
+  const streamStartTime = Date.now();
+  let chunkCount = 0;
+  let lastChunkTime = streamStartTime;
+  let lastChunk: StreamChunk | undefined;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
+      chunkCount++;
+      const now = Date.now();
+      const gapMs = now - lastChunkTime;
+      if (gapMs > 1000) {
+        console.error(`[MCP] Long gap detected: ${gapMs}ms since last chunk (chunk #${chunkCount})`);
+      }
+      lastChunkTime = now;
+
       buffer += decoder.decode(value, { stream: true });
+
+      // Fix #2: Only split if we have complete lines
+      if (!buffer.includes('\n')) {
+        continue;
+      }
+
       const lines = buffer.split("\n");
 
       // Keep the last incomplete line in the buffer
@@ -403,11 +422,12 @@ async function handleStreamingResponse(response: Response): Promise<string> {
 
         try {
           const chunk: StreamChunk = JSON.parse(data);
+          lastChunk = chunk;
 
           // Accumulate content
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
-            content += delta;
+            contentChunks.push(delta); // Fast array append
           }
 
           // Capture search results from final chunks
@@ -423,6 +443,10 @@ async function handleStreamingResponse(response: Response): Promise<string> {
   } finally {
     reader.releaseLock();
   }
+
+  const content = contentChunks.join(''); // Single concatenation at end
+  const totalStreamTime = Date.now() - streamStartTime;
+  console.error(`[MCP] Stream consumed: ${content.length} chars, ${searchResults?.length || 0} sources, ${chunkCount} chunks, ${totalStreamTime}ms total, model=${lastChunk?.model}`);
 
   const citations = searchResults ? formatSearchResults(searchResults) : "";
   return content + citations;
@@ -482,8 +506,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           search_context_size,
         } = args;
 
+        const requestedModel = typeof model === "string" ? model : "sonar";
+        console.error(`[MCP] perplexity-completions request: query="${query.substring(0, 50)}...", model=${requestedModel}`);
+
         const result = await performSearch(query, {
-          model: typeof model === "string" ? model : undefined,
+          model: requestedModel,
           stream: typeof stream === "boolean" ? stream : undefined,
           search_mode: typeof search_mode === "string" ? search_mode : undefined,
           recency_filter: typeof recency_filter === "string" ? recency_filter : undefined,

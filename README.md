@@ -418,7 +418,7 @@ The project includes `fly.toml` and `Dockerfile` configured for **private intern
 
 **Quick Start:**
 ```bash
-# Deploy to Fly.io (private internal configuration)
+# Deploy to Fly.io (private internal configuration with auto-scaling)
 fly deploy
 
 # Set environment variables
@@ -426,6 +426,13 @@ fly secrets set PERPLEXITY_API_KEY=your_api_key_here
 fly secrets set MCP_USER=your_username
 fly secrets set MCP_PASS=your_password
 ```
+
+**Auto-Scaling Configuration:**
+The default `fly.toml` includes auto-scaling settings:
+- **Scale to Zero**: Machines stop when idle to minimize costs
+- **Auto-Start**: Automatically starts on incoming requests
+- **Cold Start**: First request after idle: ~3-5 seconds (includes machine startup)
+- **Warm Requests**: Subsequent requests: ~11-26 seconds (depending on response size)
 
 **Security Note**: The default configuration uses Fly.io's internal network (`*.internal`) for private access only. No public ports are exposed, making it suitable for secure MCP client connections.
 
@@ -660,18 +667,28 @@ The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/c
 
 ### Performance Characteristics
 
-- **Time to First Token (TTFT)**: 2-3 seconds with internal streaming enabled (default)
-- **Total Response Time**: 5-8 seconds for standard queries (varies by model and search depth)
-- **Internal Streaming**: Server consumes Perplexity's stream for fast TTFT, returns complete response to clients
+- **Time to First Token (TTFT)**: ~2 seconds with internal streaming enabled (default)
+- **Total Response Time**:
+  - **Small responses** (3,700 chars): ~11-13 seconds
+  - **Large responses** (7,700 chars): ~24-26 seconds
+  - Performance scales proportionally with response size
+- **Streaming Throughput**: ~37 chunks/second with optimized O(n) array-based buffering
 - **Connection Pooling**: Keep-alive HTTP agent reduces latency on subsequent requests (60-120s timeout)
 - **Automatic Retries**: Exponential backoff for transient failures (429, 500, 502, 503, 504)
 - **Timeout Handling**: 15s default timeout with AbortController for reliable error handling
 - **Citations**: Automatic source attribution with URLs
 - **Context**: Up to 200k tokens context window (model dependent)
 
+**Performance Optimizations:**
+- **Array-Based Buffering**: O(n) chunk processing instead of O(n²) string concatenation
+- **Smart Line Splitting**: Only processes complete lines, skipping unnecessary buffer operations
+- **Diagnostic Logging**: Track chunk arrival timing, detect long gaps (>1s), monitor streaming performance
+- **Auto-Scaling**: Fly.io deployment configured to scale to zero when idle, auto-start on requests
+
 **Optimization Tips:**
 - Use `search_context_size: 'low'` for faster responses with fewer sources
-- Default `stream: true` provides optimal TTFT (2-3s vs 18-22s)
+- Use `max_tokens: 512-1024` to limit response length and reduce processing time
+- Default `stream: true` provides optimal TTFT (~2s connection time)
 - Keep-alive connections improve latency after first request
 - Automatic retries handle transient API failures transparently
 

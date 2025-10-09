@@ -236,7 +236,7 @@ async function performSearch(
   const url = 'https://api.perplexity.ai/chat/completions';
   const model = options.model || 'sonar';
   const stream = options.stream !== undefined ? options.stream : true; // Default to streaming for faster TTFT
-  const timeout = options.timeout || 15000; // Default 15s timeout
+  const timeout = options.timeout || 30000; // Default 30s timeout (increased from 15s to handle comprehensive searches)
 
   const body: any = {
     model,
@@ -346,16 +346,34 @@ async function consumePerplexityStream(
 
   const decoder = new TextDecoder();
   let buffer = '';
-  let content = '';
+  const contentChunks: string[] = []; // Fix #1: Array-based buffering (O(n) instead of O(n²))
   let searchResults: SearchResult[] | undefined;
   let lastChunk: StreamChunk | undefined;
+
+  const streamStartTime = Date.now();
+  let chunkCount = 0;
+  let lastChunkTime = streamStartTime;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
+      chunkCount++;
+      const now = Date.now();
+      const gapMs = now - lastChunkTime;
+      if (gapMs > 1000) {
+        console.error(`[MCP] Long gap detected: ${gapMs}ms since last chunk (chunk #${chunkCount})`);
+      }
+      lastChunkTime = now;
+
       buffer += decoder.decode(value, { stream: true });
+
+      // Fix #2: Only split if we have complete lines
+      if (!buffer.includes('\n')) {
+        continue;
+      }
+
       const lines = buffer.split('\n');
 
       // Keep the last incomplete line in the buffer
@@ -379,7 +397,7 @@ async function consumePerplexityStream(
           // Accumulate content from deltas
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
-            content += delta;
+            contentChunks.push(delta); // Fast array append
           }
 
           // Capture search results (only store once)
@@ -393,7 +411,9 @@ async function consumePerplexityStream(
       }
     }
 
-    console.error(`[MCP] Stream consumed: ${content.length} chars, ${searchResults?.length || 0} sources`);
+    const content = contentChunks.join(''); // Single concatenation at end
+    const totalStreamTime = Date.now() - streamStartTime;
+    console.error(`[MCP] Stream consumed: ${content.length} chars, ${searchResults?.length || 0} sources, ${chunkCount} chunks, ${totalStreamTime}ms total, model=${lastChunk?.model}`);
 
     // Return ChatCompletionResponse format
     return {
@@ -437,7 +457,7 @@ async function streamPerplexityToJsonRpcSSE(
 
   const decoder = new TextDecoder();
   let buffer = '';
-  let accumulatedContent = '';
+  const contentChunks: string[] = []; // Fix #1: Array-based buffering
   let searchResults: SearchResult[] | undefined;
 
   console.error('[MCP] Starting JSON-RPC SSE stream');
@@ -448,6 +468,12 @@ async function streamPerplexityToJsonRpcSSE(
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
+
+      // Fix #2: Only split if we have complete lines
+      if (!buffer.includes('\n')) {
+        continue;
+      }
+
       const lines = buffer.split('\n');
 
       // Keep the last incomplete line in the buffer
@@ -461,6 +487,7 @@ async function streamPerplexityToJsonRpcSSE(
         const data = line.slice(6); // Remove 'data: ' prefix
 
         if (data === '[DONE]') {
+          const accumulatedContent = contentChunks.join(''); // Single concatenation
           // Send final JSON-RPC response with complete result
           const finalResponse = {
             jsonrpc: '2.0',
@@ -494,15 +521,16 @@ async function streamPerplexityToJsonRpcSSE(
           // Accumulate content
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
-            accumulatedContent += delta;
+            contentChunks.push(delta); // Fast array append
 
             // Send streaming notification with partial content
+            const currentLength = contentChunks.reduce((sum, s) => sum + s.length, 0);
             const notification = {
               jsonrpc: '2.0',
               method: 'notifications/progress',
               params: {
                 progressToken: requestId,
-                progress: accumulatedContent.length,
+                progress: currentLength,
                 total: null // Unknown total
               }
             };
@@ -521,6 +549,7 @@ async function streamPerplexityToJsonRpcSSE(
       }
     }
 
+    const accumulatedContent = contentChunks.join(''); // Single concatenation
     // If stream ended without [DONE], send final response
     const finalResponse = {
       jsonrpc: '2.0',
@@ -676,7 +705,6 @@ async function runServer() {
             const {
               query,
               model,
-              stream,
               search_mode,
               recency_filter,
               max_tokens,
@@ -684,10 +712,11 @@ async function runServer() {
               search_context_size,
             } = args;
 
-            console.error(`[MCP] tools/call request: query="${query.substring(0, 50)}..."`);
+            const requestedModel = typeof model === 'string' ? model : 'sonar';
+            console.error(`[MCP] tools/call request: query="${query.substring(0, 50)}...", model=${requestedModel}`);
 
             const result = await performSearch(query, {
-              model: typeof model === 'string' ? model : undefined,
+              model: requestedModel,
               stream: true, // Always stream from Perplexity for faster TTFT
               search_mode: typeof search_mode === 'string' ? search_mode : undefined,
               recency_filter: typeof recency_filter === 'string' ? recency_filter : undefined,
