@@ -152,7 +152,7 @@ The November 2025 release will be a **simple, non-breaking upgrade**:
   - Domain: Search `web`, `academic`, or `sec` filings
   - Search Context: Control depth with `low` (faster, fewer sources), `medium` (balanced), `high` (comprehensive)
 - 🎯 **Configurable Parameters**: Control temperature, max tokens, and more
-- ⚡ **Performance Features**: Keep-alive connection pooling, automatic retries, 15s timeout handling
+- ⚡ **Performance Features**: Keep-alive connection pooling, automatic retries, 30s timeout handling
 - 🔒 **Type-Safe Implementation**: Full TypeScript support with strict typing
 
 ## Tools
@@ -429,10 +429,9 @@ fly secrets set MCP_PASS=your_password
 
 **Auto-Scaling Configuration:**
 The default `fly.toml` includes auto-scaling settings:
-- **Scale to Zero**: Machines stop when idle to minimize costs
-- **Auto-Start**: Automatically starts on incoming requests
-- **Cold Start**: First request after idle: ~3-5 seconds (includes machine startup)
-- **Warm Requests**: Subsequent requests: ~11-26 seconds (depending on response size)
+- **Minimum Machines**: 1 machine always running (required for `.internal` DNS resolution)
+- **Auto-Stop/Start**: Additional machines scale up/down based on load
+- **Warm Requests**: ~11-26 seconds total (depending on response size and model)
 
 **Security Note**: The default configuration uses Fly.io's internal network (`*.internal`) for private access only. No public ports are exposed, making it suitable for secure MCP client connections.
 
@@ -675,7 +674,7 @@ The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/c
 - **Streaming Throughput**: ~37 chunks/second with optimized O(n) array-based buffering
 - **Connection Pooling**: Keep-alive HTTP agent reduces latency on subsequent requests (60-120s timeout)
 - **Automatic Retries**: Exponential backoff for transient failures (429, 500, 502, 503, 504)
-- **Timeout Handling**: 15s default timeout with AbortController for reliable error handling
+- **Timeout Handling**: 30s default timeout with AbortController for reliable error handling
 - **Citations**: Automatic source attribution with URLs
 - **Context**: Up to 200k tokens context window (model dependent)
 
@@ -683,7 +682,7 @@ The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/c
 - **Array-Based Buffering**: O(n) chunk processing instead of O(n²) string concatenation
 - **Smart Line Splitting**: Only processes complete lines, skipping unnecessary buffer operations
 - **Diagnostic Logging**: Track chunk arrival timing, detect long gaps (>1s), monitor streaming performance
-- **Auto-Scaling**: Fly.io deployment configured to scale to zero when idle, auto-start on requests
+- **Auto-Scaling**: Fly.io deployment with auto-start/stop for additional machines (min 1 machine for DNS)
 
 **Optimization Tips:**
 - Use `search_context_size: 'low'` for faster responses with fewer sources
