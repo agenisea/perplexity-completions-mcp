@@ -13,8 +13,8 @@ PORT = "8080"
 internal_port = 8080
 force_https = true
 auto_start_machines = true
-auto_stop_machines = false        # <— keep at least one always on
-min_machines_running = 1
+auto_stop_machines = true         # <— additional machines stop after inactivity
+min_machines_running = 1          # <— keep primary machine always on
 processes = ["app"]
 
   [http_service.concurrency]

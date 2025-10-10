@@ -429,8 +429,8 @@ fly secrets set MCP_PASS=your_password
 
 **Configuration:**
 The default `fly.toml` uses modern Machines/v2 with `http_service`:
-- **Always-On**: 1 machine always running (auto_stop_machines = false)
-- **Auto-Start**: Additional machines start automatically based on load
+- **Always-On Primary**: 1 machine always running (min_machines_running = 1)
+- **Auto-Scaling**: Additional machines start/stop automatically based on load
 - **Concurrency Limits**: Soft limit 50 requests, hard limit 100 requests per machine
 
 **Security Note**: The default configuration uses Fly.io's internal network (`*.internal`) for private access only. No public ports are exposed, making it suitable for secure MCP client connections.
@@ -682,7 +682,7 @@ The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/c
 - **Array-Based Buffering**: O(n) chunk processing instead of O(n²) string concatenation
 - **Smart Line Splitting**: Only processes complete lines, skipping unnecessary buffer operations
 - **Diagnostic Logging**: Track chunk arrival timing, detect long gaps (>1s), monitor streaming performance
-- **Fly.io Configuration**: Always-on primary machine with auto-start for additional capacity (concurrency-based scaling)
+- **Fly.io Auto-Scaling**: Always-on primary machine with auto-start/stop for additional capacity (concurrency-based scaling)
 
 **Optimization Tips:**
 - Use `search_context_size: 'low'` for faster responses with fewer sources
