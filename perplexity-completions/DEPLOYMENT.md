@@ -54,7 +54,7 @@ fly secrets list      # View secrets
 
 - **`index.ts`**: Stdio-based MCP server for local MCP client use (not deployed)
 - **`server.ts`**: HTTP-based MCP server for Fly.io deployment (private only)
-- **API**: Perplexity Chat Completions API with SSE streaming support
+- **API**: Perplexity Chat Completions API with internal streaming for performance
 - **Authentication**: Basic auth with username/password
 - **Network**: Fly.io private `.internal` network only
 
@@ -123,7 +123,7 @@ fly logs
 You should see:
 ```
 Perplexity Chat Completions MCP Server running on port 8080
-Protocol: MCP 2024-11-05 with SSE streaming support
+Protocol: MCP 2024-11-05 with internal streaming from Perplexity
 Security: Basic Auth + Fly.io private networking
 Health check: http://localhost:8080/health
 ```
@@ -300,7 +300,7 @@ Returns:
   "tools": [
     {
       "name": "perplexity-completions",
-      "description": "Performs AI-powered web search using the Perplexity Chat Completions API. Returns AI-generated answers with real-time web search, citations, and sources. Supports SSE streaming for real-time token-by-token responses.",
+      "description": "Performs AI-powered web search using the Perplexity Chat Completions API. Returns AI-generated answers with real-time web search, citations, and sources. Uses internal streaming from Perplexity for fast TTFT, returns complete response to client.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -353,151 +353,41 @@ Returns:
 }
 ```
 
-## SSE Streaming Support
+## Response Format
 
-The server supports **Server-Sent Events (SSE)** streaming for real-time token-by-token responses from Perplexity AI. This enables progressive display of results as they are generated.
+The server always returns complete JSON responses (non-streaming to clients):
 
-### How SSE Streaming Works
-
-When `stream: true` is set in tool arguments:
-
-1. **Server receives** streaming data from Perplexity API
-2. **Pipes SSE events** directly to client in real-time
-3. **Sends structured events** with content chunks and citations
-4. **Completes with [DONE]** signal when finished
-
-### SSE Event Format
-
-**Content Event (streamed tokens):**
-```
-data: {"type":"content","content":"AI has seen "}
-data: {"type":"content","content":"significant "}
-data: {"type":"content","content":"progress..."}
-```
-
-**Citations Event (at completion):**
-```
-data: {"type":"citations","content":"\n\n## Sources\n\n1. **Article Title**\n   https://example.com\n"}
-```
-
-**Completion Signal:**
-```
-data: [DONE]
-```
-
-**Error Event (if errors occur):**
-```
-data: {"type":"error","content":"Error message"}
-```
-
-### Testing SSE Streaming
-
-**Via curl (with --no-buffer flag):**
-```bash
-curl -X POST http://perplexity-completions-mcp-private.internal:8080/mcp/call \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Basic $(echo -n 'changepilot:your-password' | base64)" \
-  -d '{
-    "name": "perplexity-completions",
-    "arguments": {
-      "query": "List and explain 10 major breakthroughs in AI from 2024-2025",
-      "model": "sonar",
-      "stream": true,
-      "max_tokens": 2000,
-      "recency_filter": "year"
-    }
-  }' \
-  --no-buffer
-```
-
-**Via fetch API (JavaScript/TypeScript):**
-```typescript
-const auth = Buffer.from('changepilot:your-password').toString('base64');
-
-const response = await fetch('http://perplexity-completions-mcp-private.internal:8080/mcp/call', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Basic ${auth}`
-  },
-  body: JSON.stringify({
-    name: 'perplexity-completions',
-    arguments: {
-      query: 'What are the latest AI developments?',
-      model: 'sonar',
-      stream: true
-    }
-  })
-});
-
-// Process SSE stream
-const reader = response.body.getReader();
-const decoder = new TextDecoder();
-let buffer = '';
-
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-
-  buffer += decoder.decode(value, { stream: true });
-  const lines = buffer.split('\n');
-  buffer = lines.pop() || '';
-
-  for (const line of lines) {
-    if (line.startsWith('data: ')) {
-      const data = line.slice(6);
-
-      if (data === '[DONE]') {
-        console.log('Stream complete');
-        break;
-      }
-
-      const event = JSON.parse(data);
-
-      if (event.type === 'content') {
-        process.stdout.write(event.content); // Display token
-      } else if (event.type === 'citations') {
-        console.log(event.content); // Display sources
-      } else if (event.type === 'error') {
-        console.error('Error:', event.content);
-      }
-    }
-  }
-}
-```
-
-### Performance Benefits
-
-**Real-time feedback:**
-- ✅ Time-to-first-token: ~200-500ms (vs 3-5s for full response)
-- ✅ Progressive display improves perceived performance
-- ✅ Users can start reading while generation continues
-
-**Efficient resource usage:**
-- ✅ No buffering of large responses in memory
-- ✅ Backpressure handling with stream flow control
-- ✅ Graceful connection management
-
-**Production considerations:**
-- ⚠️ Requires persistent HTTP connection (keep-alive)
-- ⚠️ Client must handle SSE parsing correctly
-- ⚠️ Network interruptions require reconnection logic
-
-### Non-streaming Mode
-
-If `stream: false` or `stream` is omitted, the server returns a complete JSON response:
-
+**Complete JSON Response:**
 ```json
 {
   "content": [
     {
       "type": "text",
-      "text": "AI has seen significant progress...\n\n## Sources\n\n1. **Article**\n   https://example.com"
+      "text": "AI has seen significant progress..."
+    },
+    {
+      "type": "resource",
+      "resource": {
+        "type": "search_results",
+        "results": [
+          {
+            "title": "Article Title",
+            "url": "https://example.com",
+            "snippet": "Brief snippet from article"
+          }
+        ]
+      }
     }
   ],
   "isError": false
 }
 ```
+
+**Performance Characteristics:**
+- ✅ Time-to-first-token from Perplexity: ~2-3s (via internal streaming)
+- ✅ Complete response returned to client after server-side consumption
+- ✅ Structured citations as separate resource blocks
+- ✅ No client-side stream handling required
 
 ## Rate Limiting
 

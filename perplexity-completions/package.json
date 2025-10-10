@@ -1,14 +1,13 @@
 {
   "name": "server-perplexity-completions",
   "version": "0.1.0",
-  "description": "MCP server for Perplexity Chat Completions API with SSE streaming support",
+  "description": "MCP server for Perplexity Chat Completions API with optimized performance via internal streaming",
   "keywords": [
     "ai",
     "perplexity",
     "mcp",
     "modelcontextprotocol",
     "streaming",
-    "sse",
     "chat-completions"
   ],
   "homepage": "https://github.com/agenisea/perplexity-completions-mcp",

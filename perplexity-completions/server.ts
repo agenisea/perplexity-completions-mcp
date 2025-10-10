@@ -7,7 +7,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 /**
  * HTTP server wrapper for MCP Perplexity Chat Completions
  * Uses Express with JSON-RPC protocol for MCP compliance
- * Supports SSE streaming for real-time AI responses via Perplexity API
+ * Uses internal streaming from Perplexity API for fast TTFT, returns complete JSON responses to clients
  * Includes Basic Auth and localhost binding for security
  * Compatible with Fly.io private deployment
  */
@@ -47,7 +47,7 @@ const PERPLEXITY_COMPLETIONS_TOOL: Tool = {
   description:
     'Performs AI-powered web search using the Perplexity Chat Completions API. ' +
     'Returns AI-generated answers with real-time web search, citations, and sources. ' +
-    'Supports SSE streaming for real-time token-by-token responses.',
+    'Uses internal streaming from Perplexity for fast TTFT, returns complete response to client.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -62,7 +62,7 @@ const PERPLEXITY_COMPLETIONS_TOOL: Tool = {
       },
       stream: {
         type: 'boolean',
-        description: 'Enable SSE streaming for real-time token-by-token responses (default: true for faster TTFT)',
+        description: 'Enable internal streaming from Perplexity API for faster TTFT (default: true, server consumes stream and returns complete response)',
         default: true,
       },
       search_mode: {
@@ -133,7 +133,7 @@ interface StreamChoice {
 }
 
 /**
- * Interface for streaming chunk from SSE.
+ * Interface for streaming chunk from Perplexity API (consumed server-side).
  */
 interface StreamChunk {
   id: string;
@@ -315,7 +315,7 @@ async function performSearch(
     );
   }
 
-  // Return response object for streaming (caller will handle SSE)
+  // Return response object for streaming (caller will consume stream server-side)
   if (stream) {
     return response;
   }
@@ -334,7 +334,7 @@ async function performSearch(
 
 /**
  * Consumes Perplexity streaming response and returns complete ChatCompletionResponse.
- * Used for legacy endpoints that don't support SSE streaming.
+ * Accumulates all chunks server-side and returns complete response to client.
  */
 async function consumePerplexityStream(
   perplexityResponse: globalThis.Response
@@ -430,162 +430,6 @@ async function consumePerplexityStream(
       search_results: searchResults,
       usage: lastChunk?.usage
     };
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-/**
- * Streams Perplexity response as JSON-RPC formatted SSE messages.
- * Wraps each chunk in proper MCP protocol format for client consumption.
- */
-async function streamPerplexityToJsonRpcSSE(
-  perplexityResponse: globalThis.Response,
-  expressRes: express.Response,
-  requestId: string | number
-): Promise<void> {
-  const reader = perplexityResponse.body?.getReader();
-  if (!reader) {
-    throw new Error('Response body is not readable');
-  }
-
-  // Set SSE headers
-  expressRes.setHeader('Content-Type', 'text/event-stream');
-  expressRes.setHeader('Cache-Control', 'no-cache');
-  expressRes.setHeader('Connection', 'keep-alive');
-  expressRes.setHeader('X-Accel-Buffering', 'no');
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  const contentChunks: string[] = []; // Fix #1: Array-based buffering
-  let searchResults: SearchResult[] | undefined;
-
-  console.error('[MCP] Starting JSON-RPC SSE stream');
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // Fix #2: Only split if we have complete lines
-      if (!buffer.includes('\n')) {
-        continue;
-      }
-
-      const lines = buffer.split('\n');
-
-      // Keep the last incomplete line in the buffer
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.trim() || !line.startsWith('data: ')) {
-          continue;
-        }
-
-        const data = line.slice(6); // Remove 'data: ' prefix
-
-        if (data === '[DONE]') {
-          const accumulatedContent = contentChunks.join(''); // Single concatenation
-          // Send final JSON-RPC response with complete result
-          const finalResponse = {
-            jsonrpc: '2.0',
-            id: requestId,
-            result: {
-              content: [
-                {
-                  type: 'text',
-                  text: accumulatedContent
-                },
-                ...(searchResults ? [{
-                  type: 'resource',
-                  resource: {
-                    type: 'search_results',
-                    results: searchResults
-                  }
-                }] : [])
-              ]
-            }
-          };
-
-          console.error(`[MCP] Sending final response: ${accumulatedContent.length} chars, ${searchResults?.length || 0} sources`);
-          expressRes.write(`data: ${JSON.stringify(finalResponse)}\n\n`);
-          expressRes.end();
-          return;
-        }
-
-        try {
-          const chunk: StreamChunk = JSON.parse(data);
-
-          // Accumulate content
-          const delta = chunk.choices[0]?.delta?.content;
-          if (delta) {
-            contentChunks.push(delta); // Fast array append
-
-            // Send streaming notification with partial content
-            const currentLength = contentChunks.reduce((sum, s) => sum + s.length, 0);
-            const notification = {
-              jsonrpc: '2.0',
-              method: 'notifications/progress',
-              params: {
-                progressToken: requestId,
-                progress: currentLength,
-                total: null // Unknown total
-              }
-            };
-
-            expressRes.write(`data: ${JSON.stringify(notification)}\n\n`);
-          }
-
-          // Capture search results
-          if (chunk.search_results) {
-            searchResults = chunk.search_results;
-          }
-        } catch (e) {
-          // Skip malformed chunks
-          continue;
-        }
-      }
-    }
-
-    const accumulatedContent = contentChunks.join(''); // Single concatenation
-    // If stream ended without [DONE], send final response
-    const finalResponse = {
-      jsonrpc: '2.0',
-      id: requestId,
-      result: {
-        content: [
-          {
-            type: 'text',
-            text: accumulatedContent || 'No response generated.'
-          },
-          ...(searchResults ? [{
-            type: 'resource',
-            resource: {
-              type: 'search_results',
-              results: searchResults
-            }
-          }] : [])
-        ]
-      }
-    };
-
-    console.error(`[MCP] Stream ended, sending final response`);
-    expressRes.write(`data: ${JSON.stringify(finalResponse)}\n\n`);
-    expressRes.end();
-  } catch (error) {
-    console.error(`[MCP] SSE stream error: ${error}`);
-    const errorResponse = {
-      jsonrpc: '2.0',
-      id: requestId,
-      error: {
-        code: -32603,
-        message: String(error)
-      }
-    };
-    expressRes.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
-    expressRes.end();
   } finally {
     reader.releaseLock();
   }
@@ -726,7 +570,7 @@ async function runServer() {
             });
 
             // Always consume Perplexity stream server-side
-            // StreamableHTTPClientTransport expects single JSON response, not SSE notifications
+            // StreamableHTTPClientTransport expects single JSON response, not streaming notifications
             // Use duck typing: check if result has a readable body (works for both undici and native Response)
             if (result && typeof result === 'object' && 'body' in result && result.body) {
               console.error(`[MCP] Consuming Perplexity stream for Streamable HTTP client`);
@@ -837,7 +681,7 @@ async function runServer() {
     });
   });
 
-  // MCP call endpoint with SSE streaming support
+  // MCP call endpoint (legacy support - returns complete JSON responses)
   app.post('/mcp/call', basicAuthMiddleware, async (req, res) => {
     try {
       const { name, arguments: args } = req.body;
@@ -959,7 +803,7 @@ async function runServer() {
   // Start HTTP server - bind to :: (IPv6) for Fly.io internal networking
   const httpServer = app.listen(Number(PORT), '::', () => {
     console.error(`Perplexity Chat Completions MCP Server running on port ${PORT}`);
-    console.error(`Protocol: MCP 2024-11-05 with SSE streaming support`);
+    console.error(`Protocol: MCP 2024-11-05 with internal streaming from Perplexity`);
     console.error(`Security: Basic Auth + Fly.io private networking`);
     console.error(`Health check: http://localhost:${PORT}/health`);
     console.error(`MCP Protocol: http://localhost:${PORT}/mcp`);

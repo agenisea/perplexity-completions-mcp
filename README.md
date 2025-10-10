@@ -226,7 +226,7 @@ The server defaults to `stream: true` when calling Perplexity's API for faster t
 
 ### Response Format
 
-The server always returns complete, structured responses (not SSE streams):
+The server always returns complete, structured responses (not streaming to clients):
 
 ```json
 {
@@ -704,13 +704,16 @@ perplexity-completions-mcp/
 ├── perplexity-completions/
 │   ├── dist/              # Compiled JavaScript (gitignored)
 │   ├── node_modules/      # Dependencies (gitignored)
+│   ├── DEPLOYMENT.md      # Fly.io deployment guide
 │   ├── Dockerfile         # Docker container configuration
 │   ├── fly.toml           # Fly.io deployment configuration
 │   ├── index.ts           # Stdio MCP server implementation
 │   ├── server.ts          # HTTP MCP server implementation
 │   ├── package.json       # Node.js package configuration
+│   ├── package-lock.json  # npm lock file
 │   ├── pnpm-lock.yaml     # pnpm lock file for reproducible builds
 │   ├── tsconfig.json      # TypeScript configuration
+│   ├── .dockerignore      # Docker build ignore rules
 │   ├── .env.local         # Local environment variables (gitignored)
 │   └── .env.local.example # Environment template
 ├── .gitignore             # Git ignore rules

@@ -22,14 +22,14 @@ const httpAgent = new Agent({
 
 /**
  * Definition of the Perplexity Chat Completions Tool.
- * This tool performs AI-powered search using the Perplexity Chat Completions API with optional SSE streaming.
+ * This tool performs AI-powered search using the Perplexity Chat Completions API with internal streaming from Perplexity.
  */
 const PERPLEXITY_SEARCH_TOOL: Tool = {
   name: "perplexity-completions",
   description:
     "Performs AI-powered web search using the Perplexity Chat Completions API. " +
     "Returns AI-generated answers with real-time web search, citations, and sources. " +
-    "Supports SSE streaming for real-time token-by-token responses.",
+    "Uses internal streaming from Perplexity for fast TTFT, returns complete response to client.",
   inputSchema: {
     type: "object",
     properties: {
@@ -44,7 +44,7 @@ const PERPLEXITY_SEARCH_TOOL: Tool = {
       },
       stream: {
         type: "boolean",
-        description: "Enable SSE streaming for real-time token-by-token responses (default: true for faster TTFT)",
+        description: "Enable internal streaming from Perplexity API for faster TTFT (default: true, server consumes stream and returns complete response)",
         default: true,
       },
       search_mode: {
@@ -127,7 +127,7 @@ interface StreamChoice {
 }
 
 /**
- * Interface for streaming chunk from SSE.
+ * Interface for streaming chunk from Perplexity API (consumed server-side).
  */
 interface StreamChunk {
   id: string;
@@ -363,7 +363,8 @@ async function performSearch(
 }
 
 /**
- * Handles SSE streaming response from the Chat Completions API.
+ * Handles streaming response from Perplexity Chat Completions API.
+ * Consumes the stream server-side and returns complete response.
  *
  * @param {Response} response - The fetch response object.
  * @returns {Promise<string>} The complete streamed response with citations.
