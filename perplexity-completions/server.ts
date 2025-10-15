@@ -236,7 +236,7 @@ async function performSearch(
   const url = 'https://api.perplexity.ai/chat/completions';
   const model = options.model || 'sonar';
   const stream = options.stream !== undefined ? options.stream : true; // Default to streaming for faster TTFT
-  const timeout = options.timeout || 30000; // Default 30s timeout (increased from 15s to handle comprehensive searches)
+  const timeout = options.timeout || 50000; // Default 50s timeout (increased from 30s to handle comprehensive searches)
 
   const body: any = {
     model,

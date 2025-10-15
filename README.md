@@ -152,7 +152,7 @@ The November 2025 release will be a **simple, non-breaking upgrade**:
   - Domain: Search `web`, `academic`, or `sec` filings
   - Search Context: Control depth with `low` (faster, fewer sources), `medium` (balanced), `high` (comprehensive)
 - 🎯 **Configurable Parameters**: Control temperature, max tokens, and more
-- ⚡ **Performance Features**: Keep-alive connection pooling, automatic retries, 30s timeout handling
+- ⚡ **Performance Features**: Keep-alive connection pooling, automatic retries, 50s timeout handling
 - 🔒 **Type-Safe Implementation**: Full TypeScript support with strict typing
 
 ## Tools
@@ -674,7 +674,7 @@ The [Perplexity Chat Completions API](https://docs.perplexity.ai/api-reference/c
 - **Streaming Throughput**: ~37 chunks/second with optimized O(n) array-based buffering
 - **Connection Pooling**: Keep-alive HTTP agent reduces latency on subsequent requests (60-120s timeout)
 - **Automatic Retries**: Exponential backoff for transient failures (429, 500, 502, 503, 504)
-- **Timeout Handling**: 30s default timeout with AbortController for reliable error handling
+- **Timeout Handling**: 50s default timeout with AbortController for reliable error handling
 - **Citations**: Automatic source attribution with URLs
 - **Context**: Up to 200k tokens context window (model dependent)
 
